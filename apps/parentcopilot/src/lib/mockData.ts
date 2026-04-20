@@ -135,7 +135,7 @@ export const DEMO_PREDICTIONS: Prediction[] = [
 export const DEMO_TIPS: Tip[] = [
   {
     id: 'tip-1',
-    text: 'Mia's night sleep stretches are improving — averaging 7.5 hrs. Keep the bedtime routine consistent.',
+    text: "Mia's night sleep stretches are improving — averaging 7.5 hrs. Keep the bedtime routine consistent.",
     category: 'sleep',
   },
   {
