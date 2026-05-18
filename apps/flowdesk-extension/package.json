@@ -1,0 +1,16 @@
+{
+  "name": "flowdesk-extension",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node build.mjs",
+    "clean": "rm -rf dist",
+    "rebuild": "npm run clean && npm run build",
+    "zip": "npm run rebuild && cd dist && zip -r ../flowdesk-extension.zip . && cd .."
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.269",
+    "esbuild": "^0.20.2",
+    "typescript": "^5.9.3"
+  }
+}

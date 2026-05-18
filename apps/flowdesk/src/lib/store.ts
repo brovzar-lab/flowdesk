@@ -5,6 +5,7 @@ import { DEMO_TASKS, DEMO_SCHEDULE, DEMO_EFFICIENCY_SCORE } from '../demo/seed';
 import { buildSchedule, calculateEfficiencyScore } from './schedulingEngine';
 import type { EngineTask, TimeRange } from './schedulingEngine';
 import { DEMO_CALENDAR_GAPS } from './googleCalendar';
+import { writeSessionToExtension, clearSessionFromExtension } from './chromeBridge';
 
 function toEngineTask(t: Task): EngineTask {
   return {
@@ -117,6 +118,9 @@ export const useStore = create<FlowDeskState>((set, get) => ({
         ? { taskId, taskTitle: task.title, startedAt: new Date() }
         : null,
     });
+    if (task) {
+      writeSessionToExtension(taskId, task.title, COCKPIT_DURATION_SEC);
+    }
   },
 
   exitCockpit: (completed = false) => {
@@ -129,6 +133,7 @@ export const useStore = create<FlowDeskState>((set, get) => ({
       );
       console.debug('[FlowDesk] session', { ...cockpitSession, endedAt, durationSec, completed });
     }
+    clearSessionFromExtension();
     set({
       activeTaskId: null,
       cockpitRunning: false,

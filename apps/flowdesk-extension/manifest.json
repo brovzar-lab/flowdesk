@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "FlowDesk Focus Blocker",
+  "version": "1.0.0",
+  "description": "Block distracting sites during your FlowDesk focus sessions.",
+  "permissions": ["declarativeNetRequest", "storage", "alarms", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "dist/background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content/blocker.js"],
+      "css": ["dist/content/blocker.css"]
+    }
+  ],
+  "action": {
+    "default_popup": "dist/popup/popup.html",
+    "default_title": "FlowDesk"
+  },
+  "declarative_net_request": {
+    "rule_resources": []
+  }
+}

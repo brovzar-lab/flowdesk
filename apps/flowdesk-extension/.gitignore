@@ -1,0 +1,3 @@
+node_modules/
+*.zip
+# dist/ is intentionally committed for load-unpacked Chrome extension installs
