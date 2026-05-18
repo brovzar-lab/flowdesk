@@ -6,6 +6,7 @@ import { buildSchedule, calculateEfficiencyScore } from './schedulingEngine';
 import type { EngineTask, TimeRange } from './schedulingEngine';
 import { DEMO_CALENDAR_GAPS } from './googleCalendar';
 import { writeSessionToExtension, clearSessionFromExtension } from './chromeBridge';
+import type { Tier } from './firestore';
 
 function toEngineTask(t: Task): EngineTask {
   return {
@@ -51,9 +52,11 @@ interface FlowDeskState {
   paywallOpen: boolean;
   isAuthenticated: boolean;
   cockpitSession: CockpitSession | null;
+  tier: Tier;
 
   signInDemo: () => void;
   signOut: () => void;
+  setTier: (tier: Tier) => void;
   addTask: (task: Omit<Task, 'id' | 'done'>) => void;
   removeTask: (id: string) => void;
   toggleTask: (id: string) => void;
@@ -77,6 +80,7 @@ export const useStore = create<FlowDeskState>((set, get) => ({
   paywallOpen: false,
   isAuthenticated: isDemoMode,
   cockpitSession: null,
+  tier: 'free',
 
   signInDemo: () => set({ isAuthenticated: true }),
   signOut: () =>
@@ -85,11 +89,14 @@ export const useStore = create<FlowDeskState>((set, get) => ({
       tasks: isDemoMode ? DEMO_TASKS : [],
       schedule: isDemoMode ? DEMO_SCHEDULE : [],
       efficiencyScore: isDemoMode ? DEMO_EFFICIENCY_SCORE : 0,
+      tier: 'free',
     }),
 
+  setTier: (tier) => set({ tier }),
+
   addTask: (task) => {
-    const { tasks } = get();
-    if (tasks.length >= FREE_TASK_LIMIT) {
+    const { tasks, tier } = get();
+    if (tier !== 'pro' && tasks.length >= FREE_TASK_LIMIT) {
       set({ paywallOpen: true });
       return;
     }

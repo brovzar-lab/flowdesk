@@ -9,12 +9,26 @@ import {
   serverTimestamp,
   query,
   getDoc,
+  DocumentData,
 } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { db } from './firebase';
 import type { Task } from './types';
 import type { FocusBlock } from './schedulingEngine';
+
+// ── Settings ──────────────────────────────────────────────────────────────
+
+export type Tier = 'free' | 'pro';
+
+function parseTier(data: DocumentData | undefined): Tier {
+  return data?.settings?.tier === 'pro' ? 'pro' : 'free';
+}
+
+export async function getSettings(userId: string): Promise<{ tier: Tier }> {
+  const snap = await getDoc(doc(db, 'users', userId));
+  return { tier: parseTier(snap.data()) };
+}
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
 
