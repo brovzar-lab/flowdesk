@@ -16,6 +16,8 @@ export interface ScheduleBlock {
   startHour: number;
   startMin: number;
   durationMin: number;
+  startIso?: string;
+  endIso?: string;
 }
 
 export const TYPE_COLORS: Record<TaskType, string> = {

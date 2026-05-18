@@ -1,6 +1,9 @@
+import { useEffect } from 'react';
 import { useStore } from '../lib/store';
+import { useAuthStore } from '../lib/auth';
 import { formatBlockTime } from '../demo/seed';
 import { TYPE_BLOCK_BG, TYPE_LABELS } from '../lib/types';
+import { isDemoMode } from '../lib/config';
 
 const HOUR_START = 8;
 const HOUR_END = 18;
@@ -17,15 +20,49 @@ function hourLabel(h: number): string {
 }
 
 export default function ScheduleTimeline() {
-  const { schedule, efficiencyScore, enterCockpit, runScheduler } = useStore((s) => ({
+  const { schedule, efficiencyScore, enterCockpit, runAiScheduler, isPlanningLoading, planningRationale, clearRationale } = useStore((s) => ({
     schedule: s.schedule,
     efficiencyScore: s.efficiencyScore,
     enterCockpit: s.enterCockpit,
-    runScheduler: s.runScheduler,
+    runAiScheduler: s.runAiScheduler,
+    isPlanningLoading: s.isPlanningLoading,
+    planningRationale: s.planningRationale,
+    clearRationale: s.clearRationale,
   }));
+
+  const { user, accessToken } = useAuthStore((s) => ({
+    user: s.user,
+    accessToken: s.accessToken,
+  }));
+
+  // Auto-dismiss rationale after 8s
+  useEffect(() => {
+    if (!planningRationale) return;
+    const t = setTimeout(clearRationale, 8000);
+    return () => clearTimeout(t);
+  }, [planningRationale, clearRationale]);
+
+  const handlePlanMyDay = () => {
+    if (isPlanningLoading) return;
+    runAiScheduler(isDemoMode ? null : (accessToken ?? null), isDemoMode ? null : (user?.uid ?? null));
+  };
 
   return (
     <div className="flex flex-col h-full">
+      {/* Rationale banner */}
+      {planningRationale && (
+        <div className="mx-4 mt-3 px-3 py-2 rounded-lg bg-teal-900/40 border border-teal-700/50 text-teal-300 text-xs flex items-start gap-2">
+          <span className="flex-shrink-0 mt-0.5">✦</span>
+          <span className="flex-1">{planningRationale}</span>
+          <button
+            onClick={clearRationale}
+            className="flex-shrink-0 text-teal-600 hover:text-teal-400 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-slate-700/60">
         <div>
@@ -34,10 +71,21 @@ export default function ScheduleTimeline() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => runScheduler()}
-            className="px-3 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 border border-teal-600/40 text-teal-400 text-xs font-bold transition-colors"
+            onClick={handlePlanMyDay}
+            disabled={isPlanningLoading}
+            className="px-3 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 border border-teal-600/40 text-teal-400 text-xs font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
-            ⟳ Schedule
+            {isPlanningLoading ? (
+              <>
+                <span className="animate-spin inline-block">⟳</span>
+                <span>Planning…</span>
+              </>
+            ) : (
+              <>
+                <span>⟳</span>
+                <span>{isDemoMode ? 'Schedule' : 'Plan My Day'}</span>
+              </>
+            )}
           </button>
           <div className="flex items-center gap-1.5 bg-slate-800/60 border border-slate-700/60 rounded-full px-3 py-1.5">
             <span className="text-teal-400 text-xs font-bold">{efficiencyScore}%</span>
@@ -94,7 +142,8 @@ export default function ScheduleTimeline() {
               <p className="text-slate-600 text-sm text-center">
                 No schedule yet.
                 <br />
-                Add tasks and tap ⟳ Schedule.
+                Add tasks and tap{' '}
+                {isDemoMode ? '⟳ Schedule' : '⟳ Plan My Day'}.
               </p>
             </div>
           )}

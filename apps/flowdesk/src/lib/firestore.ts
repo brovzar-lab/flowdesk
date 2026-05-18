@@ -188,3 +188,20 @@ export function useSaveSession(userId: string | null) {
     },
   });
 }
+
+// ── Calendar Sync ─────────────────────────────────────────────────────────
+
+export async function updateCalendarSyncAt(userId: string): Promise<void> {
+  await setDoc(
+    doc(db, 'users', userId),
+    { calendarSync: { lastSyncAt: serverTimestamp() } },
+    { merge: true },
+  );
+}
+
+export async function getCalendarSyncAt(userId: string): Promise<Date | null> {
+  const snap = await getDoc(doc(db, 'users', userId));
+  const lastSyncAt = snap.data()?.calendarSync?.lastSyncAt;
+  if (!lastSyncAt) return null;
+  return lastSyncAt.toDate ? lastSyncAt.toDate() : new Date(lastSyncAt);
+}
