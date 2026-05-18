@@ -1,5 +1,5 @@
 import { useStore } from '../lib/store';
-import { DEMO_EFFICIENCY_SCORE, formatBlockTime } from '../demo/seed';
+import { formatBlockTime } from '../demo/seed';
 import { TYPE_BLOCK_BG, TYPE_LABELS } from '../lib/types';
 
 const HOUR_START = 8;
@@ -17,9 +17,11 @@ function hourLabel(h: number): string {
 }
 
 export default function ScheduleTimeline() {
-  const { schedule, enterCockpit } = useStore((s) => ({
+  const { schedule, efficiencyScore, enterCockpit, runScheduler } = useStore((s) => ({
     schedule: s.schedule,
+    efficiencyScore: s.efficiencyScore,
     enterCockpit: s.enterCockpit,
+    runScheduler: s.runScheduler,
   }));
 
   return (
@@ -30,18 +32,23 @@ export default function ScheduleTimeline() {
           <h2 className="text-sm font-bold text-slate-100 tracking-wide uppercase">Today</h2>
           <p className="text-xs text-slate-500 mt-0.5">Tap a block to focus</p>
         </div>
-        <div className="flex items-center gap-1.5 bg-slate-800/60 border border-slate-700/60 rounded-full px-3 py-1.5">
-          <span className="text-teal-400 text-xs font-bold">{DEMO_EFFICIENCY_SCORE}%</span>
-          <span className="text-slate-500 text-xs">flow efficiency</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => runScheduler()}
+            className="px-3 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 border border-teal-600/40 text-teal-400 text-xs font-bold transition-colors"
+          >
+            ⟳ Schedule
+          </button>
+          <div className="flex items-center gap-1.5 bg-slate-800/60 border border-slate-700/60 rounded-full px-3 py-1.5">
+            <span className="text-teal-400 text-xs font-bold">{efficiencyScore}%</span>
+            <span className="text-slate-500 text-xs">flow</span>
+          </div>
         </div>
       </div>
 
       {/* Timeline */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        <div
-          className="relative"
-          style={{ height: `${TIMELINE_HEIGHT_PX}px` }}
-        >
+        <div className="relative" style={{ height: `${TIMELINE_HEIGHT_PX}px` }}>
           {/* Hour gridlines */}
           {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => {
             const hour = HOUR_START + i;
@@ -81,6 +88,16 @@ export default function ScheduleTimeline() {
               </button>
             );
           })}
+
+          {schedule.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <p className="text-slate-600 text-sm text-center">
+                No schedule yet.
+                <br />
+                Add tasks and tap ⟳ Schedule.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
