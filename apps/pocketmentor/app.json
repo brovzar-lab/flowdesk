@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "PocketMentor",
+    "slug": "pocketmentor",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0d0d12"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.lemaa.pocketmentor"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0d0d12"
+      },
+      "package": "com.lemaa.pocketmentor"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": ["expo-av"],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
