@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type { CareerStage, MentorId } from './types';
 
 interface PocketMentorStore {
+  uid: string | null;
+  setUid: (uid: string | null) => void;
   careerStage: CareerStage | null;
   setCareerStage: (stage: CareerStage) => void;
   activeMentorId: MentorId;
@@ -17,6 +19,8 @@ interface PocketMentorStore {
 }
 
 export const usePocketMentorStore = create<PocketMentorStore>((set) => ({
+  uid: null,
+  setUid: (uid) => set({ uid }),
   careerStage: null,
   setCareerStage: (stage) => set({ careerStage: stage }),
   activeMentorId: 'alex_chen',

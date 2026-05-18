@@ -1,9 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { onAuthStateChanged } from 'firebase/auth';
 import { usePocketMentorStore } from '../lib/store';
+import { auth } from '../lib/firebase';
+import { isDemoMode } from '../lib/demo';
 import { PaywallModal } from '../components/PaywallModal';
+import LoginScreen from '../screens/LoginScreen';
+import SignUpScreen from '../screens/SignUpScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import HomeScreen from '../screens/HomeScreen';
 import CoachingArcScreen from '../screens/CoachingArcScreen';
@@ -13,6 +18,8 @@ import VoiceMemoScreen from '../screens/VoiceMemoScreen';
 import WeeklySynthesisScreen from '../screens/WeeklySynthesisScreen';
 
 export type RootStackParamList = {
+  Login: undefined;
+  SignUp: undefined;
   Onboarding: undefined;
   MainTabs: undefined;
   VoiceMemoModal: { sessionId?: string };
@@ -87,14 +94,29 @@ function MainTabs() {
 }
 
 export function AppNavigator() {
+  const uid = usePocketMentorStore((s) => s.uid);
+  const setUid = usePocketMentorStore((s) => s.setUid);
   const hasCompletedOnboarding = usePocketMentorStore((s) => s.hasCompletedOnboarding);
   const paywallVisible = usePocketMentorStore((s) => s.paywallVisible);
   const setPaywallVisible = usePocketMentorStore((s) => s.setPaywallVisible);
 
+  useEffect(() => {
+    if (isDemoMode || !auth) return;
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setUid(user?.uid ?? null);
+    });
+    return unsub;
+  }, [setUid]);
+
   return (
     <>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!hasCompletedOnboarding ? (
+        {uid === null ? (
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="SignUp" component={SignUpScreen} />
+          </>
+        ) : !hasCompletedOnboarding ? (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         ) : (
           <>
