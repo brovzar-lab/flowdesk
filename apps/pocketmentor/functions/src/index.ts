@@ -8,3 +8,5 @@ export { transcribeVoiceMemo } from './transcribeVoiceMemo';
 export { generateCoachingResponse } from './generateCoachingResponse';
 export { generateTTS } from './generateTTS';
 export { weeklySynthesis } from './weeklySynthesis';
+export { generateDailySession } from './generateDailySession';
+export { generateWeeklySynthesis } from './generateWeeklySynthesis';

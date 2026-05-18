@@ -85,14 +85,10 @@ export const generateCoachingResponse = onDocumentUpdated(
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
+      // cache_control is valid at runtime but not typed in @anthropic-ai/sdk@0.32.x
       system: [
-        {
-          type: 'text',
-          text: persona.systemPrompt,
-          // Cache the persona system prompt — it's long and repeated every request
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
+        { type: 'text', text: persona.systemPrompt, cache_control: { type: 'ephemeral' } },
+      ] as any,
       messages: [{ role: 'user', content: userContent }],
     });
 

@@ -1,6 +1,5 @@
 import { onRequest } from 'firebase-functions/v2/https';
-import * as admin from 'firebase-admin';
-import OpenAI from 'openai';
+import { generateAndUploadTTS } from './ttsUtil';
 
 const isMockMode =
   !process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'REPLACE_WITH_VALUE';
@@ -23,7 +22,7 @@ export const generateTTS = onRequest(
       uid,
       sessionId,
       text,
-      voiceId = 'onyx',
+      voiceId,
     } = req.body as {
       uid?: string;
       sessionId?: string;
@@ -36,50 +35,13 @@ export const generateTTS = onRequest(
       return;
     }
 
-    const db = admin.firestore();
-    const sessionRef = db.doc(`users/${uid}/sessions/${sessionId}`);
-
-    if (isMockMode) {
-      // In mock mode return a silent placeholder audio URL
-      const mockAudioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-      await sessionRef.set({ audioUrl: mockAudioUrl }, { merge: true });
-      res.json({ audioUrl: mockAudioUrl });
-      return;
-    }
-
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    // OpenAI TTS voices: alloy, echo, fable, onyx, nova, shimmer
-    const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
-    const voice = validVoices.includes(voiceId) ? voiceId : 'onyx';
-
-    let audioBuffer: Buffer;
     try {
-      const mp3 = await openai.audio.speech.create({
-        model: 'tts-1',
-        voice: voice as 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer',
-        input: text,
-      });
-      audioBuffer = Buffer.from(await mp3.arrayBuffer());
+      // sessionId is YYYY-MM-DD — used as both the Firestore key and Storage path segment
+      const audioUrl = await generateAndUploadTTS({ uid, sessionDate: sessionId, text, voiceId });
+      res.json({ audioUrl });
     } catch (err) {
       console.error('TTS generation failed:', err);
       res.status(500).json({ error: 'TTS generation failed' });
-      return;
     }
-
-    const bucket = admin.storage().bucket();
-    const filePath = `users/${uid}/sessions/${sessionId}/coaching_audio.mp3`;
-    const file = bucket.file(filePath);
-
-    await file.save(audioBuffer, {
-      metadata: { contentType: 'audio/mpeg' },
-    });
-
-    await file.makePublic();
-    const audioUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
-
-    await sessionRef.set({ audioUrl }, { merge: true });
-
-    res.json({ audioUrl });
   }
 );
