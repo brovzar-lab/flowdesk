@@ -9,6 +9,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { Audio } from 'expo-av';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp, RouteProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -48,6 +49,7 @@ export default function VoiceMemoScreen() {
   const navigation = useNavigation<VoiceMemoNavProp>();
   const route = useRoute<VoiceMemoRouteProp>();
   const sessionId = route.params?.sessionId ?? 'demo-session';
+  const uid = usePocketMentorStore((s) => s.uid);
   const activeMentorId = usePocketMentorStore((s) => s.activeMentorId);
 
   const [recordState, setRecordState] = useState<RecordState>('idle');
@@ -63,8 +65,8 @@ export default function VoiceMemoScreen() {
   ).current;
   const waveLoopsRef = useRef<Animated.CompositeAnimation[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // In real mode, hold the local audio file URI after recording
   const recordedUriRef = useRef<string | null>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
 
   const startWave = useCallback(() => {
     waveLoopsRef.current.forEach((a) => a.stop());
@@ -102,6 +104,14 @@ export default function VoiceMemoScreen() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
+    }
+    // Auto-stop path: fire-and-forget so timer callback stays synchronous
+    if (!isDemoMode && recordingRef.current) {
+      const rec = recordingRef.current;
+      recordingRef.current = null;
+      rec.stopAndUnloadAsync()
+        .then(() => { recordedUriRef.current = rec.getURI(); })
+        .catch(console.error);
     }
     setRecordState('transcribing');
   }, [stopWave]);
@@ -145,8 +155,12 @@ export default function VoiceMemoScreen() {
     }
 
     // Real pipeline path
-    const uid = 'demo-uid'; // replaced by auth.currentUser.uid in production
     const audioUri = recordedUriRef.current ?? '';
+    if (!uid) {
+      setPipelineError('Not signed in. Please restart the app.');
+      setRecordState('idle');
+      return;
+    }
 
     uploadAndTranscribeVoiceMemo(uid, sessionId, audioUri)
       .then((result) => {
@@ -161,44 +175,66 @@ export default function VoiceMemoScreen() {
   }, [recordState, sessionId]);
 
   async function handleSend() {
-    if (isDemoMode) {
-      // Demo mode: show response from demo content
-      setRecordState('generating');
-      const uid = 'demo-uid';
-      const result = await pollForCoachingResponse(uid, sessionId);
-      if (result) {
-        setCoachingResponse(result.coachingResponse);
-        setRecordState('ready');
-      } else {
-        setPipelineError('Could not get coaching response.');
-        setRecordState('done');
-      }
+    if (!isDemoMode && !uid) {
+      setPipelineError('Not signed in. Please restart the app.');
       return;
     }
 
     setRecordState('generating');
-    const uid = 'demo-uid'; // replaced by auth.currentUser.uid in production
-    const result = await pollForCoachingResponse(uid, sessionId);
+    const resolvedUid = isDemoMode ? 'demo-uid' : uid!;
+    const result = await pollForCoachingResponse(resolvedUid, sessionId);
     if (result) {
       setCoachingResponse(result.coachingResponse);
       setRecordState('ready');
     } else {
-      setPipelineError('Coaching response timed out. Check back in a moment.');
+      setPipelineError(
+        isDemoMode
+          ? 'Could not get coaching response.'
+          : 'Coaching response timed out. Check back in a moment.'
+      );
       setRecordState('done');
     }
   }
 
-  function handleMicPress() {
+  async function handleMicPress() {
     if (recordState === 'idle') {
       setRecordSeconds(0);
       setPipelineError('');
+
+      if (!isDemoMode) {
+        const { status } = await Audio.requestPermissionsAsync();
+        if (status !== 'granted') {
+          setPipelineError('Microphone permission is required to record.');
+          return;
+        }
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+        const { recording } = await Audio.Recording.createAsync(
+          Audio.RecordingOptionsPresets.HIGH_QUALITY
+        );
+        recordingRef.current = recording;
+      }
+
       setRecordState('recording');
     } else if (recordState === 'recording') {
+      if (!isDemoMode && recordingRef.current) {
+        const rec = recordingRef.current;
+        recordingRef.current = null;
+        try {
+          await rec.stopAndUnloadAsync();
+          recordedUriRef.current = rec.getURI();
+        } catch (err) {
+          console.error('[VoiceMemoScreen] stopAndUnloadAsync failed:', err);
+        }
+      }
       stopRecording();
     }
   }
 
   function handleRetry() {
+    if (recordingRef.current) {
+      recordingRef.current.stopAndUnloadAsync().catch(console.error);
+      recordingRef.current = null;
+    }
     setRecordState('idle');
     setRecordSeconds(0);
     setVisibleWords(0);

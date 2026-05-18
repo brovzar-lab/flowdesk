@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import type { CareerStage } from '../lib/types';
 import { usePocketMentorStore } from '../lib/store';
+import { isDemoMode } from '../lib/demo';
 import { CAREER_STAGE_LABELS, CAREER_STAGE_DESCRIPTIONS } from '../data/demoContent';
 
 const STAGES: CareerStage[] = ['starting_out', 'in_the_grind', 'making_a_move'];
@@ -13,11 +14,33 @@ const STAGE_EMOJIS: Record<CareerStage, string> = {
 };
 
 export default function OnboardingScreen() {
+  const uid = usePocketMentorStore((s) => s.uid);
   const setCareerStage = usePocketMentorStore((s) => s.setCareerStage);
   const setHasCompletedOnboarding = usePocketMentorStore((s) => s.setHasCompletedOnboarding);
 
-  function handleSelect(stage: CareerStage) {
+  async function handleSelect(stage: CareerStage) {
     setCareerStage(stage);
+
+    if (!isDemoMode && uid) {
+      try {
+        const { db } = await import('../lib/firebase');
+        const { setDoc, doc, serverTimestamp } = await import('firebase/firestore');
+        if (db) {
+          await setDoc(doc(db, `users/${uid}/profile`), {
+            careerStage: stage,
+            activeMentorId: 'alex_chen',
+            sessionStreak: 0,
+            totalSessions: 0,
+            isPremium: false,
+            notificationTime: '08:00',
+            onboardingCompletedAt: serverTimestamp(),
+          });
+        }
+      } catch (err) {
+        console.error('[OnboardingScreen] Firestore write failed:', err);
+      }
+    }
+
     setHasCompletedOnboarding(true);
   }
 

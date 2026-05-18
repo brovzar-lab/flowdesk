@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,17 @@ import {
   Animated,
   ScrollView,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
+import { Audio } from 'expo-av';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { DEMO_SESSION, DEMO_MENTORS } from '../data/demoContent';
 import { DemoBanner } from '../components/DemoBanner';
 import { isDemoMode } from '../lib/demo';
+import { usePocketMentorStore } from '../lib/store';
+import type { FirestoreSession } from '../lib/types';
 
 type HomeNavProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
@@ -27,9 +31,22 @@ function formatTime(seconds: number): string {
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavProp>();
+  const uid = usePocketMentorStore((s) => s.uid);
+  const careerStage = usePocketMentorStore((s) => s.careerStage);
+  const activeMentorId = usePocketMentorStore((s) => s.activeMentorId);
+
+  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [sessionDuration, setSessionDuration] = useState(DEMO_SESSION.durationSeconds);
+
+  // Real mode state
+  const [firestoreSession, setFirestoreSession] = useState<FirestoreSession | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(!isDemoMode);
+  const [sessionGenerating, setSessionGenerating] = useState(false);
+  const sessionGeneratingRef = useRef(false);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   const barOffsets = useRef(
     Array.from({ length: BAR_COUNT }, () => Math.random())
@@ -73,7 +90,9 @@ export default function HomeScreen() {
     );
   }, [waveAnims]);
 
+  // Demo mode timer
   useEffect(() => {
+    if (!isDemoMode) return;
     if (isPlaying) {
       startWave();
       intervalRef.current = setInterval(() => {
@@ -97,9 +116,121 @@ export default function HomeScreen() {
     };
   }, [isPlaying, startWave, stopWave]);
 
-  const progress = elapsed / DEMO_SESSION.durationSeconds;
-  const mentor = DEMO_MENTORS.find((m) => m.id === DEMO_SESSION.mentorId)!;
-  const sessionFinished = elapsed >= DEMO_SESSION.durationSeconds;
+  // Real mode: Firestore listener + session generation
+  useEffect(() => {
+    if (isDemoMode || !uid) return;
+
+    let unsubscribe: (() => void) | undefined;
+
+    const setup = async () => {
+      const { db } = await import('../lib/firebase');
+      if (!db) return;
+      const { doc, onSnapshot } = await import('firebase/firestore');
+
+      const sessionRef = doc(db, `users/${uid}/sessions/${today}`);
+      unsubscribe = onSnapshot(sessionRef, async (snap) => {
+        if (snap.exists()) {
+          setFirestoreSession(snap.data() as FirestoreSession);
+          setSessionLoading(false);
+          sessionGeneratingRef.current = false;
+          setSessionGenerating(false);
+        } else if (!sessionGeneratingRef.current) {
+          sessionGeneratingRef.current = true;
+          setSessionGenerating(true);
+          setSessionLoading(false);
+          try {
+            const { functions } = await import('../lib/firebase');
+            const { httpsCallable } = await import('firebase/functions');
+            if (functions) {
+              const fn = httpsCallable(functions, 'generateDailySession');
+              await fn({ mentorId: activeMentorId, careerStage });
+            }
+          } catch (err) {
+            console.error('[HomeScreen] generateDailySession failed:', err);
+            sessionGeneratingRef.current = false;
+            setSessionGenerating(false);
+          }
+        }
+      });
+    };
+
+    setup();
+    return () => unsubscribe?.();
+  }, [uid, today, activeMentorId, careerStage]);
+
+  // Cleanup sound on unmount
+  useEffect(() => {
+    return () => { soundRef.current?.unloadAsync(); };
+  }, []);
+
+  async function handlePlayReal() {
+    if (!firestoreSession?.audioUrl) return;
+
+    if (soundRef.current) {
+      const status = await soundRef.current.getStatusAsync();
+      if (status.isLoaded) {
+        if (status.isPlaying) {
+          await soundRef.current.pauseAsync();
+          setIsPlaying(false);
+          stopWave();
+        } else {
+          await soundRef.current.playAsync();
+          setIsPlaying(true);
+          startWave();
+        }
+        return;
+      }
+    }
+
+    const { sound } = await Audio.Sound.createAsync(
+      { uri: firestoreSession.audioUrl },
+      { shouldPlay: true },
+      async (status) => {
+        if (!status.isLoaded) return;
+        setElapsed(Math.floor(status.positionMillis / 1000));
+        if (status.durationMillis) {
+          setSessionDuration(Math.floor(status.durationMillis / 1000));
+        }
+        if (status.didJustFinish) {
+          setIsPlaying(false);
+          stopWave();
+          if (uid) {
+            try {
+              const { db } = await import('../lib/firebase');
+              const { doc, updateDoc } = await import('firebase/firestore');
+              if (db) {
+                await updateDoc(doc(db, `users/${uid}/sessions/${today}`), { isListened: true });
+              }
+            } catch (err) {
+              console.error('[HomeScreen] isListened update failed:', err);
+            }
+          }
+        }
+      }
+    );
+    soundRef.current = sound;
+    setIsPlaying(true);
+    startWave();
+  }
+
+  // Derived display values
+  const currentMentorId = isDemoMode
+    ? DEMO_SESSION.mentorId
+    : (firestoreSession?.mentorId ?? activeMentorId);
+  const mentor = DEMO_MENTORS.find((m) => m.id === currentMentorId) ?? DEMO_MENTORS[0];
+  const sessionPrompt = isDemoMode ? DEMO_SESSION.prompt : (firestoreSession?.prompt ?? '');
+  const coachingResponse = isDemoMode
+    ? (elapsed >= DEMO_SESSION.durationSeconds ? DEMO_SESSION.arcResponse : null)
+    : firestoreSession?.coachingResponse ?? null;
+  const displayDuration = isDemoMode ? DEMO_SESSION.durationSeconds : sessionDuration;
+  const progress = displayDuration > 0 ? Math.min(elapsed / displayDuration, 1) : 0;
+  const sessionFinished = isDemoMode
+    ? elapsed >= DEMO_SESSION.durationSeconds
+    : (elapsed > 0 && elapsed >= sessionDuration && sessionDuration > 0);
+  const hasAudioUrl = isDemoMode || !!firestoreSession?.audioUrl;
+  const showSessionContent = isDemoMode || !!firestoreSession;
+  const showLoadingState = !isDemoMode && (sessionLoading || (sessionGenerating && !firestoreSession));
+  const sessionId = isDemoMode ? DEMO_SESSION.id : today;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -129,75 +260,107 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Prompt card */}
-        <View style={styles.promptCard}>
-          <Text style={styles.promptQuote}>"{DEMO_SESSION.prompt}"</Text>
-        </View>
-
-        {/* Waveform */}
-        <View style={styles.waveContainer} accessibilityLabel="Audio waveform">
-          {waveAnims.map((anim, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                styles.waveBar,
-                {
-                  height: anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [4, 52],
-                  }),
-                  backgroundColor: isPlaying ? '#7c3aed' : '#2a2a3c',
-                },
-              ]}
-            />
-          ))}
-        </View>
-
-        {/* Progress row */}
-        <View style={styles.progressRow}>
-          <Text style={styles.timeLabel}>{formatTime(elapsed)}</Text>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        {/* Loading / Generating state (real mode only) */}
+        {showLoadingState && (
+          <View style={styles.generatingCard}>
+            <ActivityIndicator color="#7c3aed" style={{ marginBottom: 12 }} />
+            <Text style={styles.generatingText}>
+              {sessionGenerating ? '✨  Generating your session…' : 'Loading…'}
+            </Text>
           </View>
-          <Text style={styles.timeLabel}>{formatTime(DEMO_SESSION.durationSeconds)}</Text>
-        </View>
+        )}
 
-        {/* Play/Pause */}
-        <TouchableOpacity
-          style={[styles.playButton, sessionFinished && styles.playButtonDone]}
-          onPress={() => !sessionFinished && setIsPlaying((p) => !p)}
-          accessibilityRole="button"
-          accessibilityLabel={isPlaying ? 'Pause session' : 'Play session'}
-        >
-          <Text style={styles.playIcon}>
-            {sessionFinished ? '✓' : isPlaying ? '⏸' : '▶'}
-          </Text>
-        </TouchableOpacity>
+        {showSessionContent && (
+          <>
+            {/* Prompt card */}
+            {sessionPrompt ? (
+              <View style={styles.promptCard}>
+                <Text style={styles.promptQuote}>"{sessionPrompt}"</Text>
+              </View>
+            ) : (
+              <View style={styles.generatingCard}>
+                <ActivityIndicator color="#7c3aed" />
+              </View>
+            )}
+
+            {/* Waveform */}
+            <View style={styles.waveContainer} accessibilityLabel="Audio waveform">
+              {waveAnims.map((anim, i) => (
+                <Animated.View
+                  key={i}
+                  style={[
+                    styles.waveBar,
+                    {
+                      height: anim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [4, 52],
+                      }),
+                      backgroundColor: isPlaying ? '#7c3aed' : '#2a2a3c',
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+
+            {/* Progress row */}
+            <View style={styles.progressRow}>
+              <Text style={styles.timeLabel}>{formatTime(elapsed)}</Text>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+              </View>
+              <Text style={styles.timeLabel}>{formatTime(displayDuration)}</Text>
+            </View>
+
+            {/* Play/Pause */}
+            {hasAudioUrl ? (
+              <TouchableOpacity
+                style={[styles.playButton, sessionFinished && styles.playButtonDone]}
+                onPress={() => {
+                  if (sessionFinished) return;
+                  if (isDemoMode) {
+                    setIsPlaying((p) => !p);
+                  } else {
+                    handlePlayReal();
+                  }
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={isPlaying ? 'Pause session' : 'Play session'}
+              >
+                <Text style={styles.playIcon}>
+                  {sessionFinished ? '✓' : isPlaying ? '⏸' : '▶'}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.generatingCard}>
+                <ActivityIndicator color="#7c3aed" style={{ marginBottom: 8 }} />
+                <Text style={styles.generatingText}>Preparing audio…</Text>
+              </View>
+            )}
+          </>
+        )}
 
         {/* Voice memo CTA */}
         <TouchableOpacity
           style={styles.voiceCta}
-          onPress={() =>
-            navigation.navigate('VoiceMemoModal', { sessionId: DEMO_SESSION.id })
-          }
+          onPress={() => navigation.navigate('VoiceMemoModal', { sessionId })}
           accessibilityRole="button"
           accessibilityLabel="Reply with a voice memo"
         >
           <Text style={styles.voiceCtaText}>🎙  Reply with Voice Memo</Text>
         </TouchableOpacity>
 
-        {/* Arc response (shown after listening) */}
-        {sessionFinished && (
+        {/* Arc response */}
+        {coachingResponse ? (
           <View style={styles.arcCard}>
             <View style={styles.arcHeader}>
               <Text style={styles.arcAvatar}>{mentor.emoji}</Text>
               <Text style={styles.arcLabel}>{mentor.name} responded</Text>
             </View>
-            <Text style={styles.arcText}>{DEMO_SESSION.arcResponse}</Text>
+            <Text style={styles.arcText}>{coachingResponse}</Text>
           </View>
-        )}
+        ) : null}
 
-        {/* Week 1 synthesis teaser — navigates to WeeklySynthesis screen */}
+        {/* Week 1 synthesis teaser */}
         <TouchableOpacity
           style={styles.synthTeaser}
           onPress={() => navigation.navigate('WeeklySynthesisModal')}
@@ -265,6 +428,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
     fontWeight: '500',
+  },
+  generatingCard: {
+    backgroundColor: '#161620',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 28,
+    borderWidth: 1,
+    borderColor: '#2a2a3c',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 80,
+  },
+  generatingText: {
+    fontSize: 14,
+    color: '#64748b',
+    textAlign: 'center',
   },
   promptCard: {
     backgroundColor: '#161620',

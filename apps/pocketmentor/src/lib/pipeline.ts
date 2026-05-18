@@ -4,8 +4,6 @@ import {
   DEMO_SESSION,
 } from '../data/demoContent';
 
-const FUNCTIONS_BASE_URL = process.env.EXPO_PUBLIC_FUNCTIONS_URL ?? '';
-
 export interface TranscribeResult {
   transcript: string;
 }
@@ -28,7 +26,7 @@ export function showDemoToast(message: string) {
 
 export async function uploadAndTranscribeVoiceMemo(
   uid: string,
-  sessionId: string,
+  sessionDate: string,
   audioUri: string
 ): Promise<TranscribeResult> {
   if (isDemoMode) {
@@ -37,21 +35,18 @@ export async function uploadAndTranscribeVoiceMemo(
     return { transcript: DEMO_VOICE_MEMO_TRANSCRIPTION };
   }
 
-  // Upload audio to Firebase Storage first
-  const storagePath = await uploadAudioToStorage(uid, sessionId, audioUri);
+  await uploadAudioToStorage(uid, sessionDate, audioUri);
 
-  const response = await fetch(`${FUNCTIONS_BASE_URL}/transcribeVoiceMemo`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uid, sessionId, storagePath }),
-  });
+  const { functions } = await import('./firebase');
+  const { httpsCallable } = await import('firebase/functions');
+  if (!functions) throw new Error('Functions not initialized');
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error ?? 'Transcription failed');
-  }
-
-  return response.json() as Promise<TranscribeResult>;
+  const fn = httpsCallable<{ uid: string; sessionDate: string }, TranscribeResult>(
+    functions,
+    'transcribeVoiceMemo'
+  );
+  const result = await fn({ uid, sessionDate });
+  return result.data;
 }
 
 export async function generateTTSAudio(
@@ -140,23 +135,20 @@ export async function pollForCoachingResponse(
 
 async function uploadAudioToStorage(
   uid: string,
-  sessionId: string,
+  sessionDate: string,
   audioUri: string
-): Promise<string> {
-  const { auth } = await import('./firebase');
-  const { getStorage, ref, uploadBytes } = await import('firebase/storage');
+): Promise<void> {
+  const { storage } = await import('./firebase');
+  const { ref, uploadBytes } = await import('firebase/storage');
 
-  if (!auth) throw new Error('Auth not initialized');
+  if (!storage) throw new Error('Storage not initialized');
 
-  const storage = getStorage();
-  const storagePath = `users/${uid}/sessions/${sessionId}/voice_memo.m4a`;
+  const storagePath = `users/${uid}/sessions/${sessionDate}/voice_memo.m4a`;
   const storageRef = ref(storage, storagePath);
 
   const response = await fetch(audioUri);
   const blob = await response.blob();
-  await uploadBytes(storageRef, blob, { contentType: 'audio/mp4' });
-
-  return storagePath;
+  await uploadBytes(storageRef, blob, { contentType: 'audio/m4a' });
 }
 
 function simulateDelay(ms: number): Promise<void> {
