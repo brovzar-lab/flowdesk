@@ -4,9 +4,11 @@ import { isDemoMode, COCKPIT_DURATION_SEC, FREE_TASK_LIMIT } from './config';
 import { DEMO_TASKS, DEMO_SCHEDULE, DEMO_EFFICIENCY_SCORE } from '../demo/seed';
 import { buildSchedule, calculateEfficiencyScore } from './schedulingEngine';
 import type { EngineTask, TimeRange } from './schedulingEngine';
-import { DEMO_CALENDAR_GAPS } from './googleCalendar';
+import { DEMO_CALENDAR_GAPS, fetchTodayCalendarGaps, writeCalendarEvents } from './googleCalendar';
 import { writeSessionToExtension, clearSessionFromExtension } from './chromeBridge';
 import type { Tier } from './firestore';
+import { updateCalendarSyncAt } from './firestore';
+import { auth } from './firebase';
 
 function toEngineTask(t: Task): EngineTask {
   return {
@@ -33,6 +35,8 @@ function focusBlockToScheduleBlock(
     startHour: startH,
     startMin: startM,
     durationMin,
+    startIso: b.start.toISOString(),
+    endIso: b.end.toISOString(),
   };
 }
 
@@ -53,6 +57,8 @@ interface FlowDeskState {
   isAuthenticated: boolean;
   cockpitSession: CockpitSession | null;
   tier: Tier;
+  isPlanningLoading: boolean;
+  planningRationale: string | null;
 
   signInDemo: () => void;
   signOut: () => void;
@@ -67,7 +73,9 @@ interface FlowDeskState {
   pauseTimer: () => void;
   openPaywall: () => void;
   closePaywall: () => void;
+  clearRationale: () => void;
   runScheduler: (gaps?: TimeRange[]) => void;
+  runAiScheduler: (accessToken: string | null, userId: string | null) => Promise<void>;
 }
 
 export const useStore = create<FlowDeskState>((set, get) => ({
@@ -81,6 +89,8 @@ export const useStore = create<FlowDeskState>((set, get) => ({
   isAuthenticated: isDemoMode,
   cockpitSession: null,
   tier: 'free',
+  isPlanningLoading: false,
+  planningRationale: null,
 
   signInDemo: () => set({ isAuthenticated: true }),
   signOut: () =>
@@ -133,7 +143,6 @@ export const useStore = create<FlowDeskState>((set, get) => ({
   exitCockpit: (completed = false) => {
     const { cockpitSession } = get();
     if (cockpitSession && !isDemoMode) {
-      // Session data available for external save via useSaveSession hook
       const endedAt = new Date();
       const durationSec = Math.round(
         (endedAt.getTime() - cockpitSession.startedAt.getTime()) / 1000,
@@ -163,6 +172,7 @@ export const useStore = create<FlowDeskState>((set, get) => ({
   pauseTimer: () => set({ cockpitRunning: false }),
   openPaywall: () => set({ paywallOpen: true }),
   closePaywall: () => set({ paywallOpen: false }),
+  clearRationale: () => set({ planningRationale: null }),
 
   runScheduler: (gaps) => {
     const { tasks } = get();
@@ -173,5 +183,99 @@ export const useStore = create<FlowDeskState>((set, get) => ({
     const WORKDAY_MIN = 8 * 60;
     const score = calculateEfficiencyScore(focusBlocks, WORKDAY_MIN);
     set({ schedule: scheduleBlocks, efficiencyScore: score });
+  },
+
+  runAiScheduler: async (accessToken, userId) => {
+    const { tasks } = get();
+
+    if (isDemoMode || !import.meta.env.VITE_PLANNING_PROXY_URL) {
+      get().runScheduler();
+      return;
+    }
+
+    set({ isPlanningLoading: true, planningRationale: null });
+
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const calendarGaps = await fetchTodayCalendarGaps(accessToken ?? '');
+
+      const calendarEvents = calendarGaps.map((gap) => ({
+        start: { dateTime: gap.start.toISOString() },
+        end: { dateTime: gap.end.toISOString() },
+      }));
+
+      const response = await fetch(
+        `${import.meta.env.VITE_PLANNING_PROXY_URL}/plan/daily`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tasks: tasks.filter((t) => !t.done).map((t) => ({
+              id: t.id,
+              title: t.title,
+              type: t.type,
+              durationMin: t.durationMin,
+            })),
+            calendarEvents,
+            workdayStart: '08:00',
+            workdayEnd: '18:00',
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Proxy returned ${response.status}`);
+      }
+
+      const { schedule: aiSchedule, rationale } = await response.json() as {
+        schedule: Array<{ taskId: string; title: string; type: string; startIso: string; endIso: string }>;
+        rationale: string;
+      };
+
+      const scheduleBlocks: ScheduleBlock[] = aiSchedule.map((block, idx) => {
+        const start = new Date(block.startIso);
+        const end = new Date(block.endIso);
+        return {
+          id: `ai-block-${block.taskId}-${idx}`,
+          taskId: block.taskId,
+          title: block.title,
+          type: block.type as ScheduleBlock['type'],
+          startHour: start.getHours(),
+          startMin: start.getMinutes(),
+          durationMin: (end.getTime() - start.getTime()) / 60000,
+          startIso: block.startIso,
+          endIso: block.endIso,
+        };
+      });
+
+      const WORKDAY_MIN = 8 * 60;
+      const engineBlocks = aiSchedule.map((b) => ({
+        start: new Date(b.startIso),
+        end: new Date(b.endIso),
+        task: { id: b.taskId, title: b.title, durationMin: 25 as const, cognitiveLoad: b.type as 'deep' | 'shallow' | 'meeting', status: 'pending' as const },
+        type: b.type as 'deep' | 'shallow' | 'meeting',
+      }));
+      const score = calculateEfficiencyScore(engineBlocks, WORKDAY_MIN);
+
+      set({ schedule: scheduleBlocks, efficiencyScore: score, planningRationale: rationale });
+
+      // Write blocks to Google Calendar and update sync timestamp
+      if (accessToken && userId) {
+        try {
+          await writeCalendarEvents(accessToken, scheduleBlocks);
+          await updateCalendarSyncAt(userId);
+        } catch (calErr) {
+          console.warn('[FlowDesk] Calendar write-back failed', calErr);
+        }
+      }
+    } catch (err) {
+      console.warn('[FlowDesk] AI planning failed, falling back to local scheduler', err);
+      get().runScheduler();
+    } finally {
+      set({ isPlanningLoading: false });
+    }
   },
 }));

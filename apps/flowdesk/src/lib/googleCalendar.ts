@@ -1,4 +1,5 @@
 import type { TimeRange } from './schedulingEngine';
+import type { ScheduleBlock } from './types';
 import { isDemoMode } from './config';
 
 export const DEMO_CALENDAR_GAPS: TimeRange[] = [
@@ -79,4 +80,30 @@ export async function fetchTodayCalendarGaps(accessToken: string): Promise<TimeR
 
   const data: { items: CalendarEvent[] } = await res.json();
   return computeGaps(data.items ?? [], dayStart, dayEnd);
+}
+
+export async function writeCalendarEvents(
+  accessToken: string,
+  blocks: ScheduleBlock[],
+): Promise<void> {
+  if (isDemoMode || !accessToken) return;
+
+  const blocksWithTime = blocks.filter((b) => b.startIso && b.endIso);
+
+  await Promise.all(
+    blocksWithTime.map((block) =>
+      fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          summary: block.title,
+          start: { dateTime: block.startIso },
+          end: { dateTime: block.endIso },
+        }),
+      }),
+    ),
+  );
 }
