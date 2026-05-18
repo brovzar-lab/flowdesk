@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useStore } from './lib/store';
 import { useAuthStore, initAuth } from './lib/auth';
 import { isDemoMode } from './lib/config';
+import { initUserSettings } from './lib/firestore';
 import AuthScreen from './screens/AuthScreen';
 import MainScreen from './screens/MainScreen';
 import CockpitScreen from './screens/CockpitScreen';
@@ -25,10 +26,13 @@ function FlowDeskApp() {
     return unsub;
   }, []);
 
-  // Sync Firebase user → store auth state
+  // Sync Firebase user → store auth state and init settings on first login
   useEffect(() => {
     if (isDemoMode) return;
     useStore.setState({ isAuthenticated: !!user });
+    if (user) {
+      initUserSettings(user.uid).catch(console.error);
+    }
   }, [user]);
 
   if (!isDemoMode && loading) {

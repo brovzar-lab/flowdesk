@@ -1,7 +1,6 @@
 import {
   collection,
   doc,
-  addDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -9,6 +8,7 @@ import {
   serverTimestamp,
   query,
   getDoc,
+  addDoc,
 } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -18,12 +18,9 @@ import type { FocusBlock } from './schedulingEngine';
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
 
-export async function addTaskToFirestore(
-  userId: string,
-  task: Omit<Task, 'id'>,
-): Promise<string> {
-  const ref = await addDoc(collection(db, 'users', userId, 'tasks'), task);
-  return ref.id;
+export async function addTaskToFirestore(userId: string, task: Task): Promise<void> {
+  const { id, ...taskData } = task;
+  await setDoc(doc(db, 'users', userId, 'tasks', id), taskData);
 }
 
 export async function updateTaskInFirestore(
@@ -133,4 +130,29 @@ export function useSaveSession(userId: string | null) {
       return saveSessionToFirestore(userId, session);
     },
   });
+}
+
+// ── User Settings ─────────────────────────────────────────────────────────
+
+interface UserSettings {
+  tier: 'free' | 'pro';
+  focusMode: boolean;
+  workdayStart: number;
+  workdayEnd: number;
+  blockedSites: string[];
+}
+
+export async function initUserSettings(userId: string): Promise<void> {
+  const settingsRef = doc(db, 'users', userId, 'settings', 'main');
+  const snap = await getDoc(settingsRef);
+  if (!snap.exists()) {
+    const defaults: UserSettings = {
+      tier: 'free',
+      focusMode: false,
+      workdayStart: 9,
+      workdayEnd: 17,
+      blockedSites: [],
+    };
+    await setDoc(settingsRef, defaults);
+  }
 }

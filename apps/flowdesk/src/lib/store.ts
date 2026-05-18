@@ -6,6 +6,15 @@ import { buildSchedule, calculateEfficiencyScore } from './schedulingEngine';
 import type { EngineTask, TimeRange } from './schedulingEngine';
 import { DEMO_CALENDAR_GAPS } from './googleCalendar';
 import { writeSessionToExtension, clearSessionFromExtension } from './chromeBridge';
+import { useAuthStore } from './auth';
+import {
+  addTaskToFirestore,
+  deleteTaskFromFirestore,
+  updateTaskInFirestore,
+  saveSessionToFirestore,
+  saveScheduleToFirestore,
+} from './firestore';
+import type { SessionData } from './firestore';
 
 function toEngineTask(t: Task): EngineTask {
   return {
@@ -95,18 +104,35 @@ export const useStore = create<FlowDeskState>((set, get) => ({
     }
     const newTask: Task = { ...task, id: `task-${Date.now()}`, done: false };
     set({ tasks: [...tasks, newTask] });
+    const userId = useAuthStore.getState().user?.uid;
+    if (!isDemoMode && userId) {
+      addTaskToFirestore(userId, newTask).catch(console.error);
+    }
   },
 
-  removeTask: (id) =>
+  removeTask: (id) => {
     set((s) => ({
       tasks: s.tasks.filter((t) => t.id !== id),
       schedule: s.schedule.filter((b) => b.taskId !== id),
-    })),
+    }));
+    const userId = useAuthStore.getState().user?.uid;
+    if (!isDemoMode && userId) {
+      deleteTaskFromFirestore(userId, id).catch(console.error);
+    }
+  },
 
-  toggleTask: (id) =>
+  toggleTask: (id) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task) return;
+    const newDone = !task.done;
     set((s) => ({
-      tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
-    })),
+      tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: newDone } : t)),
+    }));
+    const userId = useAuthStore.getState().user?.uid;
+    if (!isDemoMode && userId) {
+      updateTaskInFirestore(userId, id, { done: newDone }).catch(console.error);
+    }
+  },
 
   enterCockpit: (taskId) => {
     const task = get().tasks.find((t) => t.id === taskId);
@@ -125,13 +151,21 @@ export const useStore = create<FlowDeskState>((set, get) => ({
 
   exitCockpit: (completed = false) => {
     const { cockpitSession } = get();
-    if (cockpitSession && !isDemoMode) {
-      // Session data available for external save via useSaveSession hook
+    const userId = useAuthStore.getState().user?.uid;
+    if (cockpitSession && !isDemoMode && userId) {
       const endedAt = new Date();
       const durationSec = Math.round(
         (endedAt.getTime() - cockpitSession.startedAt.getTime()) / 1000,
       );
-      console.debug('[FlowDesk] session', { ...cockpitSession, endedAt, durationSec, completed });
+      const session: SessionData = {
+        taskId: cockpitSession.taskId,
+        taskTitle: cockpitSession.taskTitle,
+        startedAt: cockpitSession.startedAt.toISOString(),
+        endedAt: endedAt.toISOString(),
+        durationSec,
+        completed,
+      };
+      saveSessionToFirestore(userId, session).catch(console.error);
     }
     clearSessionFromExtension();
     set({
@@ -166,5 +200,10 @@ export const useStore = create<FlowDeskState>((set, get) => ({
     const WORKDAY_MIN = 8 * 60;
     const score = calculateEfficiencyScore(focusBlocks, WORKDAY_MIN);
     set({ schedule: scheduleBlocks, efficiencyScore: score });
+    const userId = useAuthStore.getState().user?.uid;
+    if (!isDemoMode && userId) {
+      const todayDateString = new Date().toISOString().split('T')[0];
+      saveScheduleToFirestore(userId, todayDateString, focusBlocks).catch(console.error);
+    }
   },
 }));
