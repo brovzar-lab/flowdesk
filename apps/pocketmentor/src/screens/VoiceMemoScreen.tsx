@@ -7,15 +7,36 @@ import {
   Animated,
   SafeAreaView,
   ScrollView,
+  Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp, RouteProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import { DEMO_VOICE_MEMO_TRANSCRIPTION } from '../data/demoContent';
+import { isDemoMode } from '../lib/demo';
+import {
+  uploadAndTranscribeVoiceMemo,
+  pollForCoachingResponse,
+} from '../lib/pipeline';
+import { usePocketMentorStore } from '../lib/store';
 
-type RecordState = 'idle' | 'recording' | 'transcribing' | 'done';
+type RecordState = 'idle' | 'recording' | 'transcribing' | 'done' | 'generating' | 'ready';
+
+type VoiceMemoNavProp = NativeStackNavigationProp<RootStackParamList, 'VoiceMemoModal'>;
+type VoiceMemoRouteProp = RouteProp<RootStackParamList, 'VoiceMemoModal'>;
 
 const BAR_COUNT = 24;
 const MAX_RECORD_SECONDS = 60;
-const TRANSCRIBE_WORDS = DEMO_VOICE_MEMO_TRANSCRIPTION.split(' ');
+const DEMO_TRANSCRIBE_WORDS = DEMO_VOICE_MEMO_TRANSCRIPTION.split(' ');
+
+const STATE_LABELS: Record<RecordState, string> = {
+  idle: 'Tap the mic to start',
+  recording: '',
+  transcribing: 'Transcribing…',
+  done: 'Memo ready to send',
+  generating: 'Getting your coaching response…',
+  ready: 'Response ready',
+};
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -24,10 +45,17 @@ function formatTime(seconds: number): string {
 }
 
 export default function VoiceMemoScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<VoiceMemoNavProp>();
+  const route = useRoute<VoiceMemoRouteProp>();
+  const sessionId = route.params?.sessionId ?? 'demo-session';
+  const activeMentorId = usePocketMentorStore((s) => s.activeMentorId);
+
   const [recordState, setRecordState] = useState<RecordState>('idle');
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [visibleWords, setVisibleWords] = useState(0);
+  const [transcript, setTranscript] = useState('');
+  const [coachingResponse, setCoachingResponse] = useState('');
+  const [pipelineError, setPipelineError] = useState('');
 
   const barOffsets = useRef(Array.from({ length: BAR_COUNT }, () => Math.random())).current;
   const waveAnims = useRef(
@@ -35,6 +63,8 @@ export default function VoiceMemoScreen() {
   ).current;
   const waveLoopsRef = useRef<Animated.CompositeAnimation[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // In real mode, hold the local audio file URI after recording
+  const recordedUriRef = useRef<string | null>(null);
 
   const startWave = useCallback(() => {
     waveLoopsRef.current.forEach((a) => a.stop());
@@ -94,33 +124,99 @@ export default function VoiceMemoScreen() {
     };
   }, [recordState, startWave, stopRecording]);
 
+  // Transcription effect — demo: word-by-word animation; real: call pipeline
   useEffect(() => {
     if (recordState !== 'transcribing') return;
 
-    setVisibleWords(0);
-    const interval = setInterval(() => {
-      setVisibleWords((n) => {
-        if (n >= TRANSCRIBE_WORDS.length) {
-          clearInterval(interval);
-          setRecordState('done');
-          return n;
-        }
-        return n + 1;
+    if (isDemoMode) {
+      setVisibleWords(0);
+      const interval = setInterval(() => {
+        setVisibleWords((n) => {
+          if (n >= DEMO_TRANSCRIBE_WORDS.length) {
+            clearInterval(interval);
+            setTranscript(DEMO_VOICE_MEMO_TRANSCRIPTION);
+            setRecordState('done');
+            return n;
+          }
+          return n + 1;
+        });
+      }, 75);
+      return () => clearInterval(interval);
+    }
+
+    // Real pipeline path
+    const uid = 'demo-uid'; // replaced by auth.currentUser.uid in production
+    const audioUri = recordedUriRef.current ?? '';
+
+    uploadAndTranscribeVoiceMemo(uid, sessionId, audioUri)
+      .then((result) => {
+        setTranscript(result.transcript);
+        setRecordState('done');
+      })
+      .catch((err: Error) => {
+        console.error('Transcription error:', err);
+        setPipelineError('Transcription failed. Please try again.');
+        setRecordState('idle');
       });
-    }, 75);
-    return () => clearInterval(interval);
-  }, [recordState]);
+  }, [recordState, sessionId]);
+
+  async function handleSend() {
+    if (isDemoMode) {
+      // Demo mode: show response from demo content
+      setRecordState('generating');
+      const uid = 'demo-uid';
+      const result = await pollForCoachingResponse(uid, sessionId);
+      if (result) {
+        setCoachingResponse(result.coachingResponse);
+        setRecordState('ready');
+      } else {
+        setPipelineError('Could not get coaching response.');
+        setRecordState('done');
+      }
+      return;
+    }
+
+    setRecordState('generating');
+    const uid = 'demo-uid'; // replaced by auth.currentUser.uid in production
+    const result = await pollForCoachingResponse(uid, sessionId);
+    if (result) {
+      setCoachingResponse(result.coachingResponse);
+      setRecordState('ready');
+    } else {
+      setPipelineError('Coaching response timed out. Check back in a moment.');
+      setRecordState('done');
+    }
+  }
 
   function handleMicPress() {
     if (recordState === 'idle') {
       setRecordSeconds(0);
+      setPipelineError('');
       setRecordState('recording');
     } else if (recordState === 'recording') {
       stopRecording();
     }
   }
 
-  const transcriptText = TRANSCRIBE_WORDS.slice(0, visibleWords).join(' ');
+  function handleRetry() {
+    setRecordState('idle');
+    setRecordSeconds(0);
+    setVisibleWords(0);
+    setTranscript('');
+    setCoachingResponse('');
+    setPipelineError('');
+    recordedUriRef.current = null;
+  }
+
+  const displayTranscript = isDemoMode
+    ? DEMO_TRANSCRIBE_WORDS.slice(0, visibleWords).join(' ')
+    : transcript;
+
+  const mentorName = {
+    alex_chen: 'Alex',
+    maya_okafor: 'Maya',
+    james_navarro: 'James',
+  }[activeMentorId] ?? 'Your mentor';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -144,10 +240,9 @@ export default function VoiceMemoScreen() {
       >
         {/* State label */}
         <Text style={styles.stateLabel}>
-          {recordState === 'idle' && 'Tap the mic to start'}
-          {recordState === 'recording' && `Recording · ${formatTime(recordSeconds)}`}
-          {recordState === 'transcribing' && 'Transcribing…'}
-          {recordState === 'done' && 'Memo ready to send'}
+          {recordState === 'recording'
+            ? `Recording · ${formatTime(recordSeconds)}`
+            : STATE_LABELS[recordState]}
         </Text>
 
         {/* Waveform */}
@@ -191,38 +286,70 @@ export default function VoiceMemoScreen() {
         )}
 
         {/* Transcript */}
-        {(recordState === 'transcribing' || recordState === 'done') && (
+        {(recordState === 'transcribing' || recordState === 'done' || recordState === 'generating' || recordState === 'ready') && (
           <View style={styles.transcriptCard}>
             <Text style={styles.transcriptLabel}>Transcript</Text>
             <Text style={styles.transcriptText}>
-              {transcriptText}
-              {recordState === 'transcribing' && (
+              {displayTranscript}
+              {recordState === 'transcribing' && isDemoMode && (
                 <Text style={styles.cursor}>|</Text>
               )}
             </Text>
           </View>
         )}
 
+        {/* Coaching response */}
+        {(recordState === 'ready') && coachingResponse ? (
+          <View style={styles.responseCard}>
+            <View style={styles.responseHeader}>
+              <Text style={styles.responseLabel}>{mentorName} responded</Text>
+            </View>
+            <Text style={styles.responseText}>{coachingResponse}</Text>
+          </View>
+        ) : null}
+
+        {/* Generating indicator */}
+        {recordState === 'generating' && (
+          <View style={styles.generatingRow}>
+            <Text style={styles.generatingText}>
+              {mentorName} is thinking…
+            </Text>
+          </View>
+        )}
+
+        {/* Error */}
+        {pipelineError ? (
+          <Text style={styles.errorText}>{pipelineError}</Text>
+        ) : null}
+
         {/* Send button */}
         {recordState === 'done' && (
           <TouchableOpacity
             style={styles.sendButton}
-            onPress={() => navigation.goBack()}
+            onPress={handleSend}
             accessibilityRole="button"
             accessibilityLabel="Send voice memo reply"
           >
-            <Text style={styles.sendButtonText}>Send Reply →</Text>
+            <Text style={styles.sendButtonText}>Send to {mentorName} →</Text>
           </TouchableOpacity>
         )}
 
-        {recordState === 'done' && (
+        {/* Done — close */}
+        {recordState === 'ready' && (
+          <TouchableOpacity
+            style={[styles.sendButton, styles.doneButton]}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Done"
+          >
+            <Text style={styles.sendButtonText}>Done ✓</Text>
+          </TouchableOpacity>
+        )}
+
+        {(recordState === 'done' || recordState === 'ready') && (
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => {
-              setRecordState('idle');
-              setRecordSeconds(0);
-              setVisibleWords(0);
-            }}
+            onPress={handleRetry}
             accessibilityRole="button"
             accessibilityLabel="Re-record voice memo"
           >
@@ -333,6 +460,49 @@ const styles = StyleSheet.create({
     color: '#7c3aed',
     fontWeight: '800',
   },
+  responseCard: {
+    width: '100%',
+    backgroundColor: '#161620',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#2a2a3c',
+    borderLeftWidth: 3,
+    borderLeftColor: '#7c3aed',
+    marginBottom: 24,
+  },
+  responseHeader: {
+    marginBottom: 12,
+  },
+  responseLabel: {
+    fontSize: 11,
+    color: '#7c3aed',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  responseText: {
+    fontSize: 15,
+    color: '#cbd5e1',
+    lineHeight: 24,
+  },
+  generatingRow: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingVertical: 16,
+  },
+  generatingText: {
+    fontSize: 14,
+    color: '#7c3aed',
+    fontWeight: '500',
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#ef4444',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
   sendButton: {
     width: '100%',
     backgroundColor: '#7c3aed',
@@ -341,6 +511,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 56,
     marginBottom: 12,
+  },
+  doneButton: {
+    backgroundColor: '#10b981',
   },
   sendButtonText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   retryButton: {

@@ -35,3 +35,31 @@ export interface WeeklySynthesis {
   recommendedFocus: string;
   locked: boolean;
 }
+
+// Firestore document shapes
+
+export interface FirestoreSession {
+  mentorId: MentorId;
+  sessionDate: string;
+  prompt?: string;
+  // Set by transcribeVoiceMemo function
+  transcript?: string;
+  transcribedAt?: unknown;
+  // Set by generateCoachingResponse function
+  coachingResponse?: string;
+  arcDirection?: string;
+  arcSummaryBullets?: string[];
+  coachingGeneratedAt?: unknown;
+  // Set by generateTTS function
+  audioUrl?: string;
+}
+
+export interface FirestoreSynthesis {
+  weekId: string;
+  weekLabel: string;
+  themes: string[];
+  progressSignals: string[];
+  recommendedFocus: string;
+  sessionCount: number;
+  createdAt?: unknown;
+}
