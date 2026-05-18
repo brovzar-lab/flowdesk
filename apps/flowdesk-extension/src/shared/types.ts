@@ -7,6 +7,13 @@ export interface ActiveSession {
   overrideExceptions: Array<{ domain: string; expiresAt: number }>;
 }
 
+export interface FlowdeskSettings {
+  userId: string;
+  focusMode: boolean;
+  blockedSites: string[];
+}
+
 export interface StorageData {
   activeSession?: ActiveSession;
+  flowdeskSettings?: FlowdeskSettings;
 }

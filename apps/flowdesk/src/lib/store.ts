@@ -6,7 +6,7 @@ import { buildSchedule, calculateEfficiencyScore } from './schedulingEngine';
 import type { EngineTask, TimeRange } from './schedulingEngine';
 import { DEMO_CALENDAR_GAPS } from './googleCalendar';
 import { writeSessionToExtension, clearSessionFromExtension } from './chromeBridge';
-import type { Tier } from './firestore';
+import type { Tier, UserSettings } from './firestore';
 
 function toEngineTask(t: Task): EngineTask {
   return {
@@ -42,6 +42,14 @@ interface CockpitSession {
   startedAt: Date;
 }
 
+const DEFAULT_SETTINGS: UserSettings = {
+  workdayStart: 9,
+  workdayEnd: 17,
+  blockedSites: ['twitter.com', 'reddit.com', 'youtube.com', 'instagram.com', 'tiktok.com'],
+  focusMode: false,
+  tier: 'free',
+};
+
 interface FlowDeskState {
   tasks: Task[];
   schedule: ScheduleBlock[];
@@ -53,10 +61,12 @@ interface FlowDeskState {
   isAuthenticated: boolean;
   cockpitSession: CockpitSession | null;
   tier: Tier;
+  settings: UserSettings;
 
   signInDemo: () => void;
   signOut: () => void;
   setTier: (tier: Tier) => void;
+  setSettings: (s: UserSettings) => void;
   addTask: (task: Omit<Task, 'id' | 'done'>) => void;
   removeTask: (id: string) => void;
   toggleTask: (id: string) => void;
@@ -81,6 +91,7 @@ export const useStore = create<FlowDeskState>((set, get) => ({
   isAuthenticated: isDemoMode,
   cockpitSession: null,
   tier: 'free',
+  settings: { ...DEFAULT_SETTINGS },
 
   signInDemo: () => set({ isAuthenticated: true }),
   signOut: () =>
@@ -90,9 +101,12 @@ export const useStore = create<FlowDeskState>((set, get) => ({
       schedule: isDemoMode ? DEMO_SCHEDULE : [],
       efficiencyScore: isDemoMode ? DEMO_EFFICIENCY_SCORE : 0,
       tier: 'free',
+      settings: { ...DEFAULT_SETTINGS },
     }),
 
   setTier: (tier) => set({ tier }),
+
+  setSettings: (s) => set({ settings: s, tier: s.tier }),
 
   addTask: (task) => {
     const { tasks, tier } = get();
@@ -116,7 +130,8 @@ export const useStore = create<FlowDeskState>((set, get) => ({
     })),
 
   enterCockpit: (taskId) => {
-    const task = get().tasks.find((t) => t.id === taskId);
+    const { tasks, settings } = get();
+    const task = tasks.find((t) => t.id === taskId);
     set({
       activeTaskId: taskId,
       cockpitSecondsLeft: COCKPIT_DURATION_SEC,
@@ -126,7 +141,7 @@ export const useStore = create<FlowDeskState>((set, get) => ({
         : null,
     });
     if (task) {
-      writeSessionToExtension(taskId, task.title, COCKPIT_DURATION_SEC);
+      writeSessionToExtension(taskId, task.title, COCKPIT_DURATION_SEC, settings.blockedSites);
     }
   },
 

@@ -1,4 +1,4 @@
-import type { ActiveSession, StorageData } from '../shared/types';
+import type { ActiveSession, FlowdeskSettings, StorageData } from '../shared/types';
 
 function formatTimeLeft(endsAt: number): string {
   const ms = Math.max(0, endsAt - Date.now());
@@ -49,13 +49,34 @@ function renderActive(session: ActiveSession): void {
   }
 }
 
-function renderIdle(): void {
+function renderIdle(settings?: FlowdeskSettings): void {
   const root = document.getElementById('app')!;
+  const focusOn = settings?.focusMode ?? false;
+  const blockedSites = settings?.blockedSites ?? [];
+
   root.innerHTML = `
     <div class="header">
-      <span class="dot dot-idle"></span>
-      <span class="label">No active session</span>
+      <span class="dot ${focusOn ? 'dot-active' : 'dot-idle'}"></span>
+      <span class="label">${focusOn ? 'Focus Mode Active' : 'No active session'}</span>
     </div>
+    <div class="focus-row">
+      <span class="focus-label">Focus Mode</span>
+      <button class="toggle-btn ${focusOn ? 'toggle-on' : 'toggle-off'}" id="focus-toggle">
+        ${focusOn ? 'ON' : 'OFF'}
+      </button>
+    </div>
+    ${
+      blockedSites.length > 0
+        ? `<div class="section-label">Blocked sites</div>
+           <ul class="domain-list">
+             ${blockedSites
+               .map(
+                 (d) => `<li class="domain-item"><span class="domain-name">${d}</span></li>`,
+               )
+               .join('')}
+           </ul>`
+        : ''
+    }
     <p class="idle-msg">Start a Cockpit session in FlowDesk to activate focus blocking.</p>
     <a class="open-link" id="open-flowdesk" href="#">Open FlowDesk</a>
   `;
@@ -64,24 +85,37 @@ function renderIdle(): void {
     e.preventDefault();
     chrome.tabs.create({ url: 'https://flowdesk.vercel.app' });
   });
+
+  document.getElementById('focus-toggle')?.addEventListener('click', () => {
+    const updated: FlowdeskSettings = {
+      userId: settings?.userId ?? '',
+      focusMode: !focusOn,
+      blockedSites: settings?.blockedSites ?? [],
+    };
+    chrome.storage.local.set({ flowdeskSettings: updated });
+  });
 }
 
-chrome.storage.local.get('activeSession', (data: StorageData) => {
+chrome.storage.local.get(['activeSession', 'flowdeskSettings'], (data: StorageData) => {
   if (data.activeSession && data.activeSession.endsAt > Date.now()) {
     renderActive(data.activeSession);
   } else {
-    renderIdle();
+    renderIdle(data.flowdeskSettings);
   }
 });
 
 chrome.storage.onChanged.addListener(
   (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-    if (area !== 'local' || !changes['activeSession']) return;
-    const session = changes['activeSession'].newValue as ActiveSession | undefined;
-    if (session && session.endsAt > Date.now()) {
-      renderActive(session);
-    } else {
-      renderIdle();
-    }
+    if (area !== 'local') return;
+    if (!changes['activeSession'] && !changes['flowdeskSettings']) return;
+
+    chrome.storage.local.get(['activeSession', 'flowdeskSettings'], (data: StorageData) => {
+      const session = data.activeSession;
+      if (session && session.endsAt > Date.now()) {
+        renderActive(session);
+      } else {
+        renderIdle(data.flowdeskSettings);
+      }
+    });
   },
 );

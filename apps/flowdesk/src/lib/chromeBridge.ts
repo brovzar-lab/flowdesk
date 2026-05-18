@@ -7,32 +7,65 @@ export interface ChromeSession {
   overrideExceptions: Array<{ domain: string; expiresAt: number }>;
 }
 
-const BLOCKED_DOMAINS = ['twitter.com', 'reddit.com', 'youtube.com', 'instagram.com', 'tiktok.com'];
-
-function hasChromeStorage(): boolean {
-  return typeof window !== 'undefined' &&
-    typeof (window as unknown as { chrome?: { storage?: unknown } }).chrome?.storage !== 'undefined';
+export interface ExtensionSettings {
+  userId: string;
+  focusMode: boolean;
+  blockedSites: string[];
 }
 
-export function writeSessionToExtension(taskId: string, taskTitle: string, durationSec: number): void {
+const FALLBACK_BLOCKED_DOMAINS = [
+  'twitter.com',
+  'reddit.com',
+  'youtube.com',
+  'instagram.com',
+  'tiktok.com',
+];
+
+type ChromeWindow = typeof window & {
+  chrome: {
+    storage: {
+      local: {
+        set: (items: Record<string, unknown>) => void;
+        remove: (key: string) => void;
+      };
+    };
+  };
+};
+
+function hasChromeStorage(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof (window as unknown as { chrome?: { storage?: unknown } }).chrome?.storage !==
+      'undefined'
+  );
+}
+
+export function writeSessionToExtension(
+  taskId: string,
+  taskTitle: string,
+  durationSec: number,
+  blockedDomains?: string[],
+): void {
   if (!hasChromeStorage()) return;
 
   const session: ChromeSession = {
     taskId,
     taskTitle,
     endsAt: Date.now() + durationSec * 1000,
-    blockedDomains: BLOCKED_DOMAINS,
+    blockedDomains: blockedDomains ?? FALLBACK_BLOCKED_DOMAINS,
     overridesLeft: 2,
     overrideExceptions: [],
   };
 
-  (window as unknown as { chrome: { storage: { local: { set: (v: unknown) => void } } } })
-    .chrome.storage.local.set({ activeSession: session });
+  (window as ChromeWindow).chrome.storage.local.set({ activeSession: session });
+}
+
+export function writeSettingsToExtension(settings: ExtensionSettings): void {
+  if (!hasChromeStorage()) return;
+  (window as ChromeWindow).chrome.storage.local.set({ flowdeskSettings: settings });
 }
 
 export function clearSessionFromExtension(): void {
   if (!hasChromeStorage()) return;
-
-  (window as unknown as { chrome: { storage: { local: { remove: (k: string) => void } } } })
-    .chrome.storage.local.remove('activeSession');
+  (window as ChromeWindow).chrome.storage.local.remove('activeSession');
 }

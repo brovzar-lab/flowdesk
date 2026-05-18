@@ -21,13 +21,53 @@ import type { FocusBlock } from './schedulingEngine';
 
 export type Tier = 'free' | 'pro';
 
-function parseTier(data: DocumentData | undefined): Tier {
-  return data?.settings?.tier === 'pro' ? 'pro' : 'free';
+export interface UserSettings {
+  workdayStart: number;
+  workdayEnd: number;
+  blockedSites: string[];
+  focusMode: boolean;
+  tier: Tier;
 }
 
-export async function getSettings(userId: string): Promise<{ tier: Tier }> {
+const DEFAULT_BLOCKED_SITES = [
+  'twitter.com',
+  'reddit.com',
+  'youtube.com',
+  'instagram.com',
+  'tiktok.com',
+];
+
+function parseSettings(data: DocumentData | undefined): UserSettings {
+  const s = data?.settings ?? {};
+  return {
+    workdayStart: typeof s.workdayStart === 'number' ? s.workdayStart : 9,
+    workdayEnd: typeof s.workdayEnd === 'number' ? s.workdayEnd : 17,
+    blockedSites: Array.isArray(s.blockedSites) ? s.blockedSites : DEFAULT_BLOCKED_SITES,
+    focusMode: typeof s.focusMode === 'boolean' ? s.focusMode : false,
+    tier: s.tier === 'pro' ? 'pro' : 'free',
+  };
+}
+
+export async function getSettings(userId: string): Promise<UserSettings> {
   const snap = await getDoc(doc(db, 'users', userId));
-  return { tier: parseTier(snap.data()) };
+  return parseSettings(snap.data());
+}
+
+export async function updateSettings(
+  userId: string,
+  patch: Partial<UserSettings>,
+): Promise<void> {
+  const ref = doc(db, 'users', userId);
+  const dotted: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    dotted[`settings.${k}`] = v;
+  }
+  try {
+    await updateDoc(ref, dotted);
+  } catch {
+    // Document doesn't exist yet — create it
+    await setDoc(ref, { settings: patch }, { merge: true });
+  }
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────

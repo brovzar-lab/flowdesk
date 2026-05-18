@@ -4,6 +4,7 @@ import { useStore } from './lib/store';
 import { useAuthStore, initAuth } from './lib/auth';
 import { isDemoMode } from './lib/config';
 import { getSettings } from './lib/firestore';
+import { writeSettingsToExtension } from './lib/chromeBridge';
 import AuthScreen from './screens/AuthScreen';
 import MainScreen from './screens/MainScreen';
 import CockpitScreen from './screens/CockpitScreen';
@@ -32,11 +33,16 @@ function FlowDeskApp() {
     useStore.setState({ isAuthenticated: !!user });
     if (user) {
       getSettings(user.uid)
-        .then(({ tier }) => {
-          useStore.getState().setTier(tier);
+        .then((settings) => {
+          useStore.getState().setSettings(settings);
+          writeSettingsToExtension({
+            userId: user.uid,
+            focusMode: settings.focusMode,
+            blockedSites: settings.blockedSites,
+          });
         })
         .catch(() => {
-          // settings unavailable — default 'free' tier remains
+          // settings unavailable — defaults remain
         });
     } else {
       useStore.getState().setTier('free');
