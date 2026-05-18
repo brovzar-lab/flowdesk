@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import {
@@ -13,16 +14,195 @@ import {
   DEMO_WEEKLY_SYNTHESIS_LOCKED,
 } from '../data/demoContent';
 import { usePocketMentorStore } from '../lib/store';
+import { isDemoMode } from '../lib/demo';
+
+function getISOWeekKey(date: Date): string {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+interface SynthesisData {
+  weekLabel: string;
+  themes: string[];
+  progressSignals: string[];
+  recommendedFocus: string;
+}
 
 export default function WeeklySynthesisScreen() {
   const navigation = useNavigation();
+  const uid = usePocketMentorStore((s) => s.uid);
   const setPaywallVisible = usePocketMentorStore((s) => s.setPaywallVisible);
-  const synthesis = DEMO_WEEKLY_SYNTHESIS;
-  const lockedSynthesis = DEMO_WEEKLY_SYNTHESIS_LOCKED;
+
+  const [synthesis, setSynthesis] = useState<SynthesisData | null>(null);
+  const [loading, setLoading] = useState(!isDemoMode);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isDemoMode || !uid) return;
+
+    let mounted = true;
+    const weekKey = getISOWeekKey(new Date());
+
+    (async () => {
+      try {
+        const { db, functions } = await import('../lib/firebase');
+        const { doc, getDoc } = await import('firebase/firestore');
+        const { httpsCallable } = await import('firebase/functions');
+        if (!db || !functions) return;
+
+        const snap = await getDoc(doc(db, `users/${uid}/synthesis/${weekKey}`));
+
+        if (snap.exists()) {
+          const data = snap.data();
+          if (mounted) {
+            setSynthesis({
+              weekLabel: data.weekLabel as string,
+              themes: (data.themes as string[]) ?? [],
+              progressSignals: (data.progressSignals as string[]) ?? [],
+              recommendedFocus: (data.recommendedFocus as string) ?? '',
+            });
+            setLoading(false);
+          }
+          return;
+        }
+
+        const generateFn = httpsCallable(functions, 'generateWeeklySynthesis');
+        const result = await generateFn({});
+        const data = result.data as SynthesisData | null;
+
+        if (mounted) {
+          if (data) {
+            setSynthesis(data);
+          } else {
+            setError('No sessions this week yet. Complete a session to generate your synthesis.');
+          }
+          setLoading(false);
+        }
+      } catch (err) {
+        if (mounted) {
+          setError('Could not load your weekly synthesis. Please try again.');
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [uid]);
+
+  const renderLiveContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color="#7c3aed" size="large" />
+          <Text style={styles.loadingText}>Generating your weekly synthesis…</Text>
+        </View>
+      );
+    }
+
+    if (error || !synthesis) {
+      return <Text style={styles.emptyText}>{error ?? 'No synthesis available yet.'}</Text>;
+    }
+
+    return (
+      <>
+        <Text style={styles.sectionNote}>
+          Each week, your arc is distilled into themes and a focus for the week ahead.
+        </Text>
+
+        <View style={styles.card}>
+          <Text style={styles.cardEyebrow}>THIS WEEK</Text>
+          <Text style={styles.cardWeekLabel}>{synthesis.weekLabel}</Text>
+
+          <Text style={styles.themesLabel}>Themes this week</Text>
+          <View style={styles.themesList}>
+            {synthesis.themes.map((theme) => (
+              <View key={theme} style={styles.themeTag}>
+                <Text style={styles.themeText}>{theme}</Text>
+              </View>
+            ))}
+          </View>
+
+          {synthesis.progressSignals.length > 0 && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.themesLabel}>Progress signals</Text>
+              {synthesis.progressSignals.map((signal, i) => (
+                <Text key={i} style={styles.signalText}>
+                  · {signal}
+                </Text>
+              ))}
+            </>
+          )}
+
+          <View style={styles.divider} />
+
+          <Text style={styles.focusLabel}>Recommended focus</Text>
+          <Text style={styles.focusText}>{synthesis.recommendedFocus}</Text>
+        </View>
+      </>
+    );
+  };
+
+  const renderDemoContent = () => (
+    <>
+      <Text style={styles.sectionNote}>
+        Each week, your arc is distilled into themes and a focus for the week ahead.
+      </Text>
+
+      <View style={styles.card}>
+        <Text style={styles.cardEyebrow}>WEEK 1</Text>
+        <Text style={styles.cardWeekLabel}>{DEMO_WEEKLY_SYNTHESIS.weekLabel}</Text>
+
+        <Text style={styles.themesLabel}>Themes this week</Text>
+        <View style={styles.themesList}>
+          {DEMO_WEEKLY_SYNTHESIS.themes.map((theme) => (
+            <View key={theme} style={styles.themeTag}>
+              <Text style={styles.themeText}>{theme}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.divider} />
+
+        <Text style={styles.focusLabel}>Recommended focus</Text>
+        <Text style={styles.focusText}>{DEMO_WEEKLY_SYNTHESIS.recommendedFocus}</Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.card, styles.cardLocked]}
+        onPress={() => setPaywallVisible(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Unlock Week 2 synthesis with Premium"
+      >
+        <Text style={styles.cardEyebrow}>WEEK 2</Text>
+        <Text style={styles.cardWeekLabel}>{DEMO_WEEKLY_SYNTHESIS_LOCKED.weekLabel}</Text>
+
+        <Text style={styles.themesLabel}>Themes this week</Text>
+        <View style={styles.themesList}>
+          {DEMO_WEEKLY_SYNTHESIS_LOCKED.themes.map((theme, i) => (
+            <View key={i} style={[styles.themeTag, styles.themeTagLocked]}>
+              <Text style={[styles.themeText, styles.themeTextLocked]}>{theme}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.lockOverlay}>
+          <Text style={styles.lockIcon}>🔒</Text>
+          <Text style={styles.lockText}>Unlock with Premium</Text>
+          <Text style={styles.lockSub}>$9.99/mo · cancel anytime</Text>
+        </View>
+      </TouchableOpacity>
+    </>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -40,55 +220,7 @@ export default function WeeklySynthesisScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.sectionNote}>
-          Each week, your arc is distilled into themes and a focus for the week ahead.
-        </Text>
-
-        {/* Unlocked week */}
-        <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>WEEK 1</Text>
-          <Text style={styles.cardWeekLabel}>{synthesis.weekLabel}</Text>
-
-          <Text style={styles.themesLabel}>Themes this week</Text>
-          <View style={styles.themesList}>
-            {synthesis.themes.map((theme) => (
-              <View key={theme} style={styles.themeTag}>
-                <Text style={styles.themeText}>{theme}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.focusLabel}>Recommended focus</Text>
-          <Text style={styles.focusText}>{synthesis.recommendedFocus}</Text>
-        </View>
-
-        {/* Locked week */}
-        <TouchableOpacity
-          style={[styles.card, styles.cardLocked]}
-          onPress={() => setPaywallVisible(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Unlock Week 2 synthesis with Premium"
-        >
-          <Text style={styles.cardEyebrow}>WEEK 2</Text>
-          <Text style={styles.cardWeekLabel}>{lockedSynthesis.weekLabel}</Text>
-
-          <Text style={styles.themesLabel}>Themes this week</Text>
-          <View style={styles.themesList}>
-            {lockedSynthesis.themes.map((theme, i) => (
-              <View key={i} style={[styles.themeTag, styles.themeTagLocked]}>
-                <Text style={[styles.themeText, styles.themeTextLocked]}>{theme}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.lockOverlay}>
-            <Text style={styles.lockIcon}>🔒</Text>
-            <Text style={styles.lockText}>Unlock with Premium</Text>
-            <Text style={styles.lockSub}>$9.99/mo · cancel anytime</Text>
-          </View>
-        </TouchableOpacity>
+        {isDemoMode ? renderDemoContent() : renderLiveContent()}
       </ScrollView>
     </SafeAreaView>
   );
@@ -123,6 +255,23 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     paddingBottom: 48,
     gap: 16,
+  },
+  loadingContainer: {
+    paddingTop: 60,
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#475569',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#475569',
+    textAlign: 'center',
+    marginTop: 40,
+    lineHeight: 21,
+    paddingHorizontal: 20,
   },
   sectionNote: {
     fontSize: 14,
@@ -187,6 +336,12 @@ const styles = StyleSheet.create({
   },
   themeTextLocked: {
     color: '#334155',
+  },
+  signalText: {
+    fontSize: 13,
+    color: '#64748b',
+    lineHeight: 20,
+    marginBottom: 4,
   },
   divider: {
     height: 1,

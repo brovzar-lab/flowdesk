@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { DEMO_MENTORS } from '../data/demoContent';
 import { usePocketMentorStore } from '../lib/store';
@@ -19,87 +20,158 @@ const MENTOR_ACCENT: Record<MentorId, string> = {
   james_navarro: '#f59e0b',
 };
 
+const JAMES_NAVARRO_STREAK_THRESHOLD = 30;
+
 export default function PersonaSelectorScreen() {
+  const uid = usePocketMentorStore((s) => s.uid);
   const activeMentorId = usePocketMentorStore((s) => s.activeMentorId);
   const setActiveMentorId = usePocketMentorStore((s) => s.setActiveMentorId);
   const setPaywallVisible = usePocketMentorStore((s) => s.setPaywallVisible);
 
-  function handleMentorPress(mentorId: MentorId, locked: boolean) {
+  const [sessionStreak, setSessionStreak] = useState(0);
+  const [loading, setLoading] = useState(!isDemoMode);
+
+  useEffect(() => {
+    if (isDemoMode || !uid) {
+      setLoading(false);
+      return;
+    }
+
+    let mounted = true;
+    (async () => {
+      try {
+        const { db } = await import('../lib/firebase');
+        const { doc, getDoc } = await import('firebase/firestore');
+        if (!db) {
+          if (mounted) setLoading(false);
+          return;
+        }
+
+        const snap = await getDoc(doc(db, `users/${uid}/profile`));
+        if (mounted && snap.exists()) {
+          const data = snap.data();
+          setSessionStreak((data.sessionStreak as number) ?? 0);
+          const firestoreMentorId = data.activeMentorId as MentorId | undefined;
+          if (firestoreMentorId) setActiveMentorId(firestoreMentorId);
+        }
+      } catch (err) {
+        console.error('[PersonaSelectorScreen] profile load failed:', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [uid]);
+
+  async function handleMentorPress(mentorId: MentorId, locked: boolean) {
     if (locked) {
       setPaywallVisible(true);
       return;
     }
+
     setActiveMentorId(mentorId);
+
+    if (!isDemoMode && uid) {
+      try {
+        const { db } = await import('../lib/firebase');
+        const { doc, updateDoc } = await import('firebase/firestore');
+        if (db) {
+          await updateDoc(doc(db, `users/${uid}/profile`), { activeMentorId: mentorId });
+        }
+      } catch (err) {
+        console.error('[PersonaSelectorScreen] activeMentorId update failed:', err);
+      }
+    }
   }
+
+  const mentors = DEMO_MENTORS.map((mentor) => {
+    if (mentor.id === 'james_navarro') {
+      const locked = sessionStreak < JAMES_NAVARRO_STREAK_THRESHOLD;
+      return {
+        ...mentor,
+        locked,
+        lockReason: `Unlock at ${JAMES_NAVARRO_STREAK_THRESHOLD}-day streak`,
+      };
+    }
+    return { ...mentor, locked: false };
+  });
 
   return (
     <SafeAreaView style={styles.safeArea}>
       {isDemoMode && <DemoBanner />}
       <View style={styles.titleRow}>
         <Text style={styles.title}>Your Mentors</Text>
+        {!isDemoMode && sessionStreak > 0 && (
+          <Text style={styles.streakBadge}>🔥 {sessionStreak}-day streak</Text>
+        )}
       </View>
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.description}>
-          Choose who guides your daily sessions. Each mentor has a distinct coaching
-          philosophy — pick the one that fits your moment.
-        </Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color="#7c3aed" />
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.description}>
+            Choose who guides your daily sessions. Each mentor has a distinct coaching
+            philosophy — pick the one that fits your moment.
+          </Text>
 
-        {DEMO_MENTORS.map((mentor) => {
-          const isActive = mentor.id === activeMentorId;
-          const accent = MENTOR_ACCENT[mentor.id];
+          {mentors.map((mentor) => {
+            const isActive = mentor.id === activeMentorId;
+            const accent = MENTOR_ACCENT[mentor.id];
 
-          return (
-            <TouchableOpacity
-              key={mentor.id}
-              style={[
-                styles.card,
-                isActive && { borderColor: accent },
-                mentor.locked && styles.cardLocked,
-              ]}
-              onPress={() => handleMentorPress(mentor.id, mentor.locked)}
-              accessibilityRole="button"
-              accessibilityLabel={
-                mentor.locked
-                  ? `${mentor.name} — locked, tap to unlock`
-                  : isActive
-                  ? `${mentor.name} — active mentor`
-                  : `Select ${mentor.name} as your mentor`
-              }
-            >
-              {/* Avatar */}
-              <View style={[styles.avatar, { borderColor: mentor.locked ? '#2a2a3c' : accent }]}>
-                <Text style={styles.avatarEmoji}>{mentor.emoji}</Text>
-              </View>
-
-              {/* Info */}
-              <View style={styles.cardInfo}>
-                <View style={styles.nameRow}>
-                  <Text style={[styles.mentorName, mentor.locked && styles.lockedText]}>
-                    {mentor.name}
-                  </Text>
-                  {isActive && (
-                    <View style={[styles.activeBadge, { backgroundColor: accent }]}>
-                      <Text style={styles.activeBadgeText}>Active</Text>
-                    </View>
-                  )}
-                  {mentor.locked && (
-                    <Text style={styles.lockBadge}>🔒</Text>
-                  )}
+            return (
+              <TouchableOpacity
+                key={mentor.id}
+                style={[
+                  styles.card,
+                  isActive && { borderColor: accent },
+                  mentor.locked && styles.cardLocked,
+                ]}
+                onPress={() => handleMentorPress(mentor.id, mentor.locked)}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  mentor.locked
+                    ? `${mentor.name} — locked, ${mentor.lockReason}`
+                    : isActive
+                    ? `${mentor.name} — active mentor`
+                    : `Select ${mentor.name} as your mentor`
+                }
+              >
+                <View style={[styles.avatar, { borderColor: mentor.locked ? '#2a2a3c' : accent }]}>
+                  <Text style={styles.avatarEmoji}>{mentor.emoji}</Text>
                 </View>
-                <Text style={[styles.archetype, { color: mentor.locked ? '#334155' : accent }]}>
-                  {mentor.archetype}
-                </Text>
-                <Text style={[styles.style, mentor.locked && styles.lockedText]}>
-                  {mentor.locked ? mentor.lockReason : mentor.style}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+
+                <View style={styles.cardInfo}>
+                  <View style={styles.nameRow}>
+                    <Text style={[styles.mentorName, mentor.locked && styles.lockedText]}>
+                      {mentor.name}
+                    </Text>
+                    {isActive && (
+                      <View style={[styles.activeBadge, { backgroundColor: accent }]}>
+                        <Text style={styles.activeBadgeText}>Active</Text>
+                      </View>
+                    )}
+                    {mentor.locked && <Text style={styles.lockBadge}>🔒</Text>}
+                  </View>
+                  <Text style={[styles.archetype, { color: mentor.locked ? '#334155' : accent }]}>
+                    {mentor.archetype}
+                  </Text>
+                  <Text style={[styles.style, mentor.locked && styles.lockedText]}>
+                    {mentor.locked ? mentor.lockReason : mentor.style}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -107,6 +179,9 @@ export default function PersonaSelectorScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#0d0d12' },
   titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 12,
@@ -117,6 +192,16 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     color: '#f8fafc',
+  },
+  streakBadge: {
+    fontSize: 13,
+    color: '#f59e0b',
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   container: {
     paddingHorizontal: 20,

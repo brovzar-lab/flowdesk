@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,9 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { usePocketMentorStore } from '../lib/store';
 import { CAREER_STAGE_LABELS } from '../data/demoContent';
 import type { CareerStage } from '../lib/types';
@@ -15,7 +17,21 @@ import { DemoBanner } from '../components/DemoBanner';
 
 const NOTIFICATION_TIMES = ['07:00', '08:00', '09:00', '12:00', '18:00', '21:00'];
 
+async function scheduleDaily(timeStr: string) {
+  const [hour, minute] = timeStr.split(':').map(Number);
+  await Notifications.cancelAllScheduledNotificationsAsync();
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Your daily coaching session is ready',
+      body: 'Tap to start your session with your mentor.',
+    },
+    trigger: { hour, minute, repeats: true },
+  });
+}
+
 export default function SettingsScreen() {
+  const uid = usePocketMentorStore((s) => s.uid);
+  const setUid = usePocketMentorStore((s) => s.setUid);
   const careerStage = usePocketMentorStore((s) => s.careerStage);
   const setCareerStage = usePocketMentorStore((s) => s.setCareerStage);
   const setHasCompletedOnboarding = usePocketMentorStore((s) => s.setHasCompletedOnboarding);
@@ -25,6 +41,76 @@ export default function SettingsScreen() {
   const setNotificationTime = usePocketMentorStore((s) => s.setNotificationTime);
 
   const stages: CareerStage[] = ['starting_out', 'in_the_grind', 'making_a_move'];
+
+  useEffect(() => {
+    if (isDemoMode || !uid) return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        const { db } = await import('../lib/firebase');
+        const { doc, getDoc } = await import('firebase/firestore');
+        if (!db) return;
+        const snap = await getDoc(doc(db, `users/${uid}/profile`));
+        if (mounted && snap.exists()) {
+          const time = snap.data().notificationTime as string | undefined;
+          if (time) setNotificationTime(time);
+        }
+      } catch (err) {
+        console.error('[SettingsScreen] profile load failed:', err);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [uid]);
+
+  async function handleNotificationTimeChange(time: string) {
+    setNotificationTime(time);
+
+    if (isDemoMode) return;
+
+    if (uid) {
+      try {
+        const { db } = await import('../lib/firebase');
+        const { doc, updateDoc } = await import('firebase/firestore');
+        if (db) {
+          await updateDoc(doc(db, `users/${uid}/profile`), { notificationTime: time });
+        }
+      } catch (err) {
+        console.error('[SettingsScreen] notificationTime update failed:', err);
+      }
+    }
+
+    try {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status === 'granted') {
+        await scheduleDaily(time);
+      }
+    } catch (err) {
+      console.error('[SettingsScreen] notification scheduling failed:', err);
+    }
+  }
+
+  async function handleSignOut() {
+    if (isDemoMode) {
+      setHasCompletedOnboarding(false);
+      setCareerStage('starting_out');
+      return;
+    }
+    try {
+      const { auth } = await import('../lib/firebase');
+      const { signOut } = await import('firebase/auth');
+      if (auth) {
+        await signOut(auth);
+        setUid(null);
+      }
+    } catch (err) {
+      console.error('[SettingsScreen] signOut failed:', err);
+      Alert.alert('Sign out failed', 'Please try again.');
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -88,7 +174,7 @@ export default function SettingsScreen() {
               <TouchableOpacity
                 key={time}
                 style={[styles.timeChip, notificationTime === time && styles.timeChipActive]}
-                onPress={() => setNotificationTime(time)}
+                onPress={() => handleNotificationTimeChange(time)}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: notificationTime === time }}
                 accessibilityLabel={`Set reminder to ${time}`}
@@ -133,6 +219,16 @@ export default function SettingsScreen() {
             <Text style={styles.resetButtonText}>Reset to Onboarding (Demo)</Text>
           </TouchableOpacity>
         )}
+
+        {/* Sign Out */}
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={handleSignOut}
+          accessibilityRole="button"
+          accessibilityLabel={isDemoMode ? 'Exit demo' : 'Sign out'}
+        >
+          <Text style={styles.signOutText}>{isDemoMode ? 'Exit Demo' : 'Sign Out'}</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -275,5 +371,19 @@ const styles = StyleSheet.create({
   resetButtonText: {
     fontSize: 13,
     color: '#475569',
+  },
+  signOutButton: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    backgroundColor: '#161620',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2a2a3c',
+    minHeight: 52,
+  },
+  signOutText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#ef4444',
   },
 });

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import type { CareerStage } from '../lib/types';
 import { usePocketMentorStore } from '../lib/store';
 import { isDemoMode } from '../lib/demo';
@@ -39,6 +40,12 @@ export default function OnboardingScreen() {
       } catch (err) {
         console.error('[OnboardingScreen] Firestore write failed:', err);
       }
+    }
+
+    try {
+      await Notifications.requestPermissionsAsync();
+    } catch {
+      // Notifications are non-critical; proceed even if permission request fails
     }
 
     setHasCompletedOnboarding(true);

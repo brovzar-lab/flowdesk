@@ -25,7 +25,7 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-av"],
+    "plugins": ["expo-av", "expo-notifications"],
     "experiments": {
       "typedRoutes": false
     }
