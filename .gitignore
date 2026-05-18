@@ -9,3 +9,4 @@ dist/
 coverage/
 .firebase/
 firebase-debug.log
+apps/flowdesk-planner/node_modules
