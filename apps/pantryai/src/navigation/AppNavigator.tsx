@@ -14,13 +14,14 @@ import ScanScreen from '../screens/ScanScreen';
 import ScanReviewScreen from '../screens/ScanReviewScreen';
 import MealPlanScreen from '../screens/MealPlanScreen';
 import ShoppingListScreen from '../screens/ShoppingListScreen';
+import type { DetectedItem } from '../lib/types';
 
 export type RootStackParamList = {
   Login: undefined;
   SignUp: undefined;
   Onboarding: undefined;
   MainTabs: undefined;
-  ScanReview: undefined;
+  ScanReview: { items: DetectedItem[]; scanId: string };
 };
 
 export type MainTabParamList = {

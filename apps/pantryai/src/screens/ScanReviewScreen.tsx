@@ -6,36 +6,71 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
+  TextInput,
   Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
+import { DemoBanner } from '../components/DemoBanner';
 import { isDemoMode } from '../lib/demo';
 import { usePantryAIStore } from '../lib/store';
 import { DEMO_DETECTED_ITEMS, CATEGORY_EMOJI } from '../data/demoContent';
 import type { DetectedItem } from '../lib/types';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 
-type ReviewNav = NativeStackNavigationProp<RootStackParamList, 'ScanReview'>;
+type ReviewNav = NativeStackNavigationProp<RootStackParamList>;
+type ReviewRoute = RouteProp<RootStackParamList, 'ScanReview'>;
+
+const LOW_CONFIDENCE_THRESHOLD = 0.7;
 
 export default function ScanReviewScreen() {
   const navigation = useNavigation<ReviewNav>();
+  const route = useRoute<ReviewRoute>();
   const setCurrentScanId = usePantryAIStore((s) => s.setCurrentScanId);
+  const uid = usePantryAIStore((s) => s.uid);
+
+  const { items: initialItems, scanId } = route.params;
 
   const [items, setItems] = useState<DetectedItem[]>(
-    isDemoMode ? DEMO_DETECTED_ITEMS : []
+    isDemoMode ? DEMO_DETECTED_ITEMS : initialItems
   );
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [manualInput, setManualInput] = useState('');
 
-  function toggleItem(id: string) {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, userConfirmed: !item.userConfirmed } : item
-      )
-    );
+  function startEdit(item: DetectedItem) {
+    setEditingId(item.id);
+    setEditingName(item.name);
+  }
+
+  function commitEdit(id: string) {
+    const trimmed = editingName.trim();
+    if (trimmed) {
+      setItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, name: trimmed } : item))
+      );
+    }
+    setEditingId(null);
+    setEditingName('');
   }
 
   function removeItem(id: string) {
     setItems((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function addManualItem() {
+    const trimmed = manualInput.trim();
+    if (!trimmed) return;
+    const newItem: DetectedItem = {
+      id: `manual-${Date.now()}`,
+      name: trimmed,
+      confidence: 1.0,
+      category: 'other',
+      userConfirmed: true,
+    };
+    setItems((prev) => [...prev, newItem]);
+    setManualInput('');
   }
 
   async function handleConfirm() {
@@ -51,88 +86,178 @@ export default function ScanReviewScreen() {
       return;
     }
 
-    // Real mode: write scan to Firestore
     try {
       const { db } = await import('../lib/firebase');
-      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
-      if (!db) return;
-      const { uid } = usePantryAIStore.getState();
-      if (!uid) return;
-      const ref = await addDoc(collection(db, `users/${uid}/pantryScans`), {
-        status: 'done',
-        detectedItems: confirmed,
-        createdAt: serverTimestamp(),
-      });
-      setCurrentScanId(ref.id);
+      const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      if (!db || !scanId || !uid) return;
+
+      await setDoc(
+        doc(db, `users/${uid}/pantryScans/${scanId}`),
+        {
+          detectedItems: confirmed,
+          confirmedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setCurrentScanId(scanId);
     } catch (err) {
-      console.error('[ScanReview] Firestore write failed:', err);
+      console.error('[ScanReview] Firestore update failed:', err);
     }
 
     navigation.navigate('MainTabs');
   }
 
-  const confirmed = items.filter((i) => i.userConfirmed);
+  const lowConfidenceCount = items.filter(
+    (i) => i.confidence < LOW_CONFIDENCE_THRESHOLD
+  ).length;
+  const showRescanPrompt = items.length < 5;
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {isDemoMode && <DemoBanner />}
+
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel="Go back to camera"
         >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Review Items</Text>
-        <Text style={styles.count}>{confirmed.length} selected</Text>
+        <Text style={styles.count}>{items.length} items</Text>
       </View>
 
       <Text style={styles.subtitle}>
-        Tap to deselect items the AI got wrong. Long-press to remove.
+        Edit names, remove wrong items, or add what the scan missed.
+        {lowConfidenceCount > 0
+          ? ` ${lowConfidenceCount} item${lowConfidenceCount > 1 ? 's' : ''} flagged as low confidence.`
+          : ''}
       </Text>
 
-      <ScrollView contentContainerStyle={styles.list}>
-        {items.map((item) => (
+      <ScrollView
+        contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {items.map((item) => {
+          const isLow = item.confidence < LOW_CONFIDENCE_THRESHOLD;
+          const isEditing = editingId === item.id;
+
+          return (
+            <View key={item.id} style={[styles.itemRow, isLow && styles.itemRowLow]}>
+              <Text style={styles.itemEmoji}>{CATEGORY_EMOJI[item.category] ?? '📦'}</Text>
+
+              <View style={styles.itemInfo}>
+                {isEditing ? (
+                  <TextInput
+                    style={styles.nameInput}
+                    value={editingName}
+                    onChangeText={setEditingName}
+                    onSubmitEditing={() => commitEdit(item.id)}
+                    onBlur={() => commitEdit(item.id)}
+                    autoFocus
+                    returnKeyType="done"
+                    selectTextOnFocus
+                    accessibilityLabel="Edit item name"
+                  />
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => startEdit(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit name: ${item.name}`}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  >
+                    <Text style={[styles.itemName, isLow && styles.itemNameLow]}>
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <View style={styles.itemMeta}>
+                  <Text style={styles.itemCategory}>
+                    {item.category}
+                  </Text>
+                  <View style={[styles.confidenceBadge, isLow && styles.confidenceBadgeLow]}>
+                    <Text style={[styles.confidenceText, isLow && styles.confidenceTextLow]}>
+                      {Math.round(item.confidence * 100)}%
+                    </Text>
+                  </View>
+                  {isLow && (
+                    <Text style={styles.lowConfidenceTag}>low confidence</Text>
+                  )}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => removeItem(item.id)}
+                style={styles.deleteBtn}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${item.name}`}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.deleteBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+
+        {/* Add manually row */}
+        <View style={styles.addRow}>
+          <TextInput
+            style={styles.addInput}
+            value={manualInput}
+            onChangeText={setManualInput}
+            placeholder="Add item manually…"
+            placeholderTextColor="#4b5563"
+            returnKeyType="done"
+            onSubmitEditing={addManualItem}
+            accessibilityLabel="Add item manually"
+          />
           <TouchableOpacity
-            key={item.id}
-            style={[styles.itemRow, !item.userConfirmed && styles.itemRowDeselected]}
-            onPress={() => toggleItem(item.id)}
-            onLongPress={() => removeItem(item.id)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: item.userConfirmed }}
-            accessibilityLabel={`${item.name}, confidence ${Math.round(item.confidence * 100)}%`}
+            onPress={addManualItem}
+            style={[styles.addBtn, !manualInput.trim() && styles.addBtnDisabled]}
+            disabled={!manualInput.trim()}
+            accessibilityRole="button"
+            accessibilityLabel="Add item"
           >
-            <View style={[styles.checkbox, item.userConfirmed && styles.checkboxChecked]}>
-              {item.userConfirmed && <Text style={styles.checkmark}>✓</Text>}
-            </View>
-            <View style={styles.itemInfo}>
-              <Text style={[styles.itemName, !item.userConfirmed && styles.itemNameDeselected]}>
-                {item.name}
-              </Text>
-              <Text style={styles.itemMeta}>
-                {CATEGORY_EMOJI[item.category]} {item.category} ·{' '}
-                {Math.round(item.confidence * 100)}% confidence
-              </Text>
-            </View>
+            <Text style={styles.addBtnText}>+</Text>
           </TouchableOpacity>
-        ))}
+        </View>
       </ScrollView>
 
       <View style={styles.footer}>
+        {/* Re-scan prompt */}
+        {showRescanPrompt && (
+          <TouchableOpacity
+            style={styles.rescanBtn}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+          >
+            <Text style={styles.rescanBtnText}>
+              Only {items.length} item{items.length !== 1 ? 's' : ''} detected — Re-scan for better results
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
-          style={[styles.confirmBtn, confirmed.length === 0 && styles.confirmBtnDisabled]}
+          style={[styles.confirmBtn, items.length === 0 && styles.confirmBtnDisabled]}
           onPress={handleConfirm}
-          disabled={confirmed.length === 0}
+          disabled={items.length === 0}
           accessibilityRole="button"
-          accessibilityLabel="Confirm pantry items and generate meal plan"
+          accessibilityLabel="Generate meal plan from these items"
         >
           <Text style={styles.confirmBtnText}>
-            Confirm {confirmed.length} Items & Generate Plan →
+            Generate Meal Plan →
           </Text>
         </TouchableOpacity>
+
         <Text style={styles.footerNote}>
-          {isDemoMode ? 'Demo mode — plan will use hardcoded data' : 'AI meal plan will be generated'}
+          {isDemoMode
+            ? 'Demo mode — plan will use hardcoded data'
+            : `${items.length} item${items.length !== 1 ? 's' : ''} confirmed`}
         </Text>
       </View>
     </SafeAreaView>
@@ -160,7 +285,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     lineHeight: 18,
   },
-  list: { paddingHorizontal: 20, paddingBottom: 8 },
+  list: { paddingHorizontal: 20, paddingBottom: 16 },
   itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,30 +296,93 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1a2d1a',
     minHeight: 60,
+    gap: 10,
   },
-  itemRowDeselected: { opacity: 0.4 },
-  checkbox: {
-    width: 22,
-    height: 22,
+  itemRowLow: {
+    borderColor: '#3d2e10',
+    backgroundColor: '#130f07',
+  },
+  itemEmoji: { fontSize: 22, width: 28, textAlign: 'center' },
+  itemInfo: { flex: 1, gap: 4 },
+  itemName: { fontSize: 15, fontWeight: '600', color: '#f0fdf4' },
+  itemNameLow: { color: '#d1a24a' },
+  nameInput: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#f0fdf4',
+    backgroundColor: '#162316',
     borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#374151',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#22c55e',
+  },
+  itemMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemCategory: { fontSize: 11, color: '#6b7280' },
+  confidenceBadge: {
+    backgroundColor: '#162316',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  confidenceBadgeLow: { backgroundColor: '#2a1d08' },
+  confidenceText: { fontSize: 11, fontWeight: '600', color: '#22c55e' },
+  confidenceTextLow: { color: '#d1a24a' },
+  lowConfidenceTag: { fontSize: 10, color: '#78521a', fontStyle: 'italic' },
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#1a1212',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#2d1a1a',
   },
-  checkboxChecked: { backgroundColor: '#16a34a', borderColor: '#16a34a' },
-  checkmark: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  itemInfo: { flex: 1 },
-  itemName: { fontSize: 15, fontWeight: '600', color: '#f0fdf4', marginBottom: 2 },
-  itemNameDeselected: { color: '#6b7280' },
-  itemMeta: { fontSize: 12, color: '#6b7280' },
+  deleteBtnText: { color: '#9b3535', fontSize: 13, fontWeight: '700' },
+  addRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  addInput: {
+    flex: 1,
+    backgroundColor: '#0f1a0f',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1a2d1a',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#f0fdf4',
+    minHeight: 48,
+  },
+  addBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#16a34a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBtnDisabled: { backgroundColor: '#1a2d1a' },
+  addBtnText: { color: '#fff', fontSize: 22, fontWeight: '700', lineHeight: 26 },
   footer: {
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: '#1a2d1a',
-    gap: 8,
+    gap: 10,
   },
+  rescanBtn: {
+    backgroundColor: '#0f1a0f',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1a2d1a',
+  },
+  rescanBtnText: { fontSize: 13, color: '#22c55e', fontWeight: '500' },
   confirmBtn: {
     backgroundColor: '#16a34a',
     borderRadius: 14,
@@ -204,6 +392,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmBtnDisabled: { opacity: 0.4 },
-  confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   footerNote: { fontSize: 12, color: '#374151', textAlign: 'center' },
 });
