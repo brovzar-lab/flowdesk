@@ -14,6 +14,12 @@ interface PantryAIStore {
   setScansThisMonth: (n: number) => void;
   currentScanId: string | null;
   setCurrentScanId: (id: string | null) => void;
+  currentPlanId: string | null;
+  setCurrentPlanId: (id: string | null) => void;
+  currentListId: string | null;
+  setCurrentListId: (id: string | null) => void;
+  isGeneratingPlan: boolean;
+  setIsGeneratingPlan: (v: boolean) => void;
 }
 
 export const usePantryAIStore = create<PantryAIStore>((set) => ({
@@ -29,4 +35,10 @@ export const usePantryAIStore = create<PantryAIStore>((set) => ({
   setScansThisMonth: (n) => set({ scansThisMonth: n }),
   currentScanId: null,
   setCurrentScanId: (id) => set({ currentScanId: id }),
+  currentPlanId: null,
+  setCurrentPlanId: (id) => set({ currentPlanId: id }),
+  currentListId: null,
+  setCurrentListId: (id) => set({ currentListId: id }),
+  isGeneratingPlan: false,
+  setIsGeneratingPlan: (v) => set({ isGeneratingPlan: v }),
 }));

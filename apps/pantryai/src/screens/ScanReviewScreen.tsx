@@ -12,9 +12,11 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
+import { httpsCallable } from 'firebase/functions';
 import { DemoBanner } from '../components/DemoBanner';
 import { isDemoMode } from '../lib/demo';
 import { usePantryAIStore } from '../lib/store';
+import { functions } from '../lib/firebase';
 import { DEMO_DETECTED_ITEMS, CATEGORY_EMOJI } from '../data/demoContent';
 import type { DetectedItem } from '../lib/types';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -28,6 +30,10 @@ export default function ScanReviewScreen() {
   const navigation = useNavigation<ReviewNav>();
   const route = useRoute<ReviewRoute>();
   const setCurrentScanId = usePantryAIStore((s) => s.setCurrentScanId);
+  const setCurrentPlanId = usePantryAIStore((s) => s.setCurrentPlanId);
+  const setCurrentListId = usePantryAIStore((s) => s.setCurrentListId);
+  const setIsGeneratingPlan = usePantryAIStore((s) => s.setIsGeneratingPlan);
+  const dietaryPref = usePantryAIStore((s) => s.dietaryPref);
   const uid = usePantryAIStore((s) => s.uid);
 
   const { items: initialItems, scanId } = route.params;
@@ -105,7 +111,32 @@ export default function ScanReviewScreen() {
       console.error('[ScanReview] Firestore update failed:', err);
     }
 
+    // Navigate immediately so user sees the loading skeleton on MealPlan tab
     navigation.navigate('MainTabs');
+    setIsGeneratingPlan(true);
+
+    // Call generateMealPlan in background — completes after navigation
+    void (async () => {
+      try {
+        if (!functions) return;
+        const fn = httpsCallable<
+          { scanId: string; dietaryPref: string },
+          { planId: string; listId: string }
+        >(functions, 'generateMealPlan');
+        const result = await fn({ scanId, dietaryPref: dietaryPref ?? 'none' });
+        setCurrentPlanId(result.data.planId);
+        setCurrentListId(result.data.listId);
+      } catch (err) {
+        console.error('[ScanReview] generateMealPlan failed:', err);
+        Alert.alert(
+          'Meal Plan Generation Failed',
+          'Could not generate your meal plan. Please try again from the home screen.',
+          [{ text: 'OK' }]
+        );
+      } finally {
+        setIsGeneratingPlan(false);
+      }
+    })();
   }
 
   const lowConfidenceCount = items.filter(
@@ -229,7 +260,6 @@ export default function ScanReviewScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        {/* Re-scan prompt */}
         {showRescanPrompt && (
           <TouchableOpacity
             style={styles.rescanBtn}

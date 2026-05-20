@@ -1,5 +1,10 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  memoryLocalCache,
+  type Firestore,
+} from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
@@ -16,7 +21,19 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-export const db = isDemoMode ? null : getFirestore(app);
+function initDb(): Firestore | null {
+  if (isDemoMode) return null;
+  try {
+    // Persistent cache works on web; gracefully falls back on React Native where
+    // IndexedDB is unavailable — offline shopping list persistence still works
+    // via Firestore's internal retry queue.
+    return initializeFirestore(app, { localCache: persistentLocalCache() });
+  } catch {
+    return initializeFirestore(app, { localCache: memoryLocalCache() });
+  }
+}
+
+export const db = initDb();
 export const auth = isDemoMode ? null : getAuth(app);
 export const storage = isDemoMode ? null : getStorage(app);
 export const functions = isDemoMode ? null : getFunctions(app);

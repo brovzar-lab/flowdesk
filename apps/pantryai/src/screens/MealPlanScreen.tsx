@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,22 +6,74 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
+  Animated,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { onSnapshot, doc } from 'firebase/firestore';
 import { DemoBanner } from '../components/DemoBanner';
 import { isDemoMode } from '../lib/demo';
+import { usePantryAIStore } from '../lib/store';
+import { db } from '../lib/firebase';
 import { DEMO_MEAL_PLAN } from '../data/demoContent';
-import type { DayMeals, RecipeRef } from '../lib/types';
+import type { DayMeals, MealPlan, RecipeRef } from '../lib/types';
+import type { MainTabParamList } from '../navigation/AppNavigator';
+
+type MealPlanNav = BottomTabNavigationProp<MainTabParamList, 'MealPlan'>;
 
 export default function MealPlanScreen() {
-  const meals = isDemoMode ? DEMO_MEAL_PLAN.meals : [];
-  const weekOf = isDemoMode ? DEMO_MEAL_PLAN.weekOf : null;
+  const navigation = useNavigation<MealPlanNav>();
+  const uid = usePantryAIStore((s) => s.uid);
+  const currentPlanId = usePantryAIStore((s) => s.currentPlanId);
+  const isGeneratingPlan = usePantryAIStore((s) => s.isGeneratingPlan);
+
+  const [plan, setPlan] = useState<MealPlan | null>(isDemoMode ? DEMO_MEAL_PLAN : null);
+  const [loadError, setLoadError] = useState(false);
 
   const todayDayIndex = new Date().getDay();
   const adjustedIndex = todayDayIndex === 0 ? 6 : todayDayIndex - 1;
   const [selectedDay, setSelectedDay] = useState(adjustedIndex);
   const [expandedMeal, setExpandedMeal] = useState<string | null>(null);
 
+  // Load plan from Firestore when planId is available
+  useEffect(() => {
+    if (isDemoMode || !db || !uid || !currentPlanId) return;
+
+    setLoadError(false);
+    const ref = doc(db, `users/${uid}/mealPlans/${currentPlanId}`);
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        if (!snap.exists()) { setLoadError(true); return; }
+        const data = snap.data();
+        setPlan({
+          id: snap.id,
+          scanId: data.scanId ?? '',
+          weekOf: data.weekOf ?? '',
+          meals: Array.isArray(data.meals) ? (data.meals as DayMeals[]) : [],
+        });
+      },
+      (err) => {
+        console.error('[MealPlanScreen] Firestore error:', err);
+        setLoadError(true);
+      }
+    );
+    return unsub;
+  }, [uid, currentPlanId]);
+
+  const meals = plan?.meals ?? [];
+  const weekOf = plan?.weekOf ?? null;
   const currentDay = meals[selectedDay] ?? null;
+  const isLoading = isGeneratingPlan || (!isDemoMode && !plan && !loadError);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        {isDemoMode && <DemoBanner />}
+        <GeneratingSkeleton />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -34,7 +86,13 @@ export default function MealPlanScreen() {
           )}
         </View>
 
-        {meals.length === 0 ? (
+        {loadError ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>⚠️</Text>
+            <Text style={styles.emptyTitle}>Couldn't load plan</Text>
+            <Text style={styles.emptyText}>Check your connection and try scanning again.</Text>
+          </View>
+        ) : meals.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🍽️</Text>
             <Text style={styles.emptyTitle}>No plan yet</Text>
@@ -55,7 +113,7 @@ export default function MealPlanScreen() {
                 <TouchableOpacity
                   key={day.day}
                   style={[styles.dayChip, selectedDay === idx && styles.dayChipActive]}
-                  onPress={() => setSelectedDay(idx)}
+                  onPress={() => { setSelectedDay(idx); setExpandedMeal(null); }}
                   accessibilityRole="button"
                   accessibilityState={{ selected: selectedDay === idx }}
                   accessibilityLabel={day.day}
@@ -94,6 +152,18 @@ export default function MealPlanScreen() {
                 ))}
               </View>
             )}
+
+            {/* View Shopping List CTA */}
+            <TouchableOpacity
+              style={styles.shoppingCta}
+              onPress={() => navigation.navigate('ShoppingList')}
+              accessibilityRole="button"
+              accessibilityLabel="View shopping list"
+            >
+              <Text style={styles.shoppingCtaEmoji}>🛒</Text>
+              <Text style={styles.shoppingCtaText}>View Shopping List</Text>
+              <Text style={styles.shoppingCtaChevron}>›</Text>
+            </TouchableOpacity>
           </>
         )}
       </ScrollView>
@@ -137,14 +207,59 @@ function MealCard({
       {expanded && (
         <View style={styles.mealExpanded}>
           <Text style={styles.expandSectionLabel}>Ingredients</Text>
-          {meal.ingredients.map((ing) => (
-            <Text key={ing} style={styles.ingredient}>· {ing}</Text>
+          {meal.ingredients.map((ing, i) => (
+            <Text key={i} style={styles.ingredient}>· {ing}</Text>
           ))}
           <Text style={styles.expandSectionLabel}>Instructions</Text>
           <Text style={styles.instructions}>{meal.instructions}</Text>
         </View>
       )}
     </TouchableOpacity>
+  );
+}
+
+function GeneratingSkeleton() {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [opacity]);
+
+  return (
+    <View style={styles.skeletonContainer}>
+      <View style={styles.skeletonHeader}>
+        <Text style={styles.title}>Meal Plan</Text>
+        <Text style={styles.generatingLabel}>Generating…</Text>
+      </View>
+      <Text style={styles.generatingSubtitle}>
+        Crafting your 7-day plan from pantry items. This takes 10–20 seconds.
+      </Text>
+      <Animated.View style={[styles.skeletonDayRow, { opacity }]}>
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+          <View key={d} style={styles.skeletonDayChip} />
+        ))}
+      </Animated.View>
+      <Animated.View style={{ opacity }}>
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={styles.skeletonCard}>
+            <View style={styles.skeletonCardInner}>
+              <View style={styles.skeletonCircle} />
+              <View style={styles.skeletonLines}>
+                <View style={[styles.skeletonLine, { width: '40%' }]} />
+                <View style={[styles.skeletonLine, { width: '70%', marginTop: 8 }]} />
+              </View>
+            </View>
+          </View>
+        ))}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -245,4 +360,64 @@ const styles = StyleSheet.create({
   },
   ingredient: { fontSize: 14, color: '#d1fae5', lineHeight: 22 },
   instructions: { fontSize: 14, color: '#cbd5e1', lineHeight: 22 },
+  shoppingCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f1a0f',
+    borderRadius: 16,
+    padding: 18,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#1a2d1a',
+  },
+  shoppingCtaEmoji: { fontSize: 22, marginRight: 12 },
+  shoppingCtaText: { flex: 1, fontSize: 15, fontWeight: '600', color: '#86efac' },
+  shoppingCtaChevron: { fontSize: 22, color: '#374151' },
+  // Skeleton
+  skeletonContainer: { paddingHorizontal: 24, paddingTop: 24 },
+  skeletonHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 8,
+  },
+  generatingLabel: { fontSize: 12, color: '#22c55e', fontWeight: '600' },
+  generatingSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  skeletonDayRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  skeletonDayChip: {
+    width: 44,
+    height: 34,
+    borderRadius: 20,
+    backgroundColor: '#1a2d1a',
+  },
+  skeletonCard: {
+    backgroundColor: '#0f1a0f',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#1a2d1a',
+  },
+  skeletonCardInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  skeletonCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1a2d1a',
+  },
+  skeletonLines: { flex: 1, gap: 0 },
+  skeletonLine: {
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#1a2d1a',
+  },
 });
