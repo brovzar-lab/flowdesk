@@ -5,83 +5,89 @@ import { BRAINSTORM_SUBJECTS } from '../data/subjects';
 export function BestIdeaReveal() {
   const result = useDebateStore((s) => s.bestIdeaResult);
   const config = useDebateStore((s) => s.config);
+  const turns = useDebateStore((s) => s.turns);
   const reset = useDebateStore((s) => s.reset);
 
   const subjectOption = BRAINSTORM_SUBJECTS.find((s) => s.id === config.subject);
+  const leftName = config.leftDebater?.personaName || 'Agent A';
+  const rightName = config.rightDebater?.personaName || 'Agent B';
+  const ideaCount = turns.filter((t) => t.side !== 'lead').length;
 
   if (!result) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-500 text-sm animate-pulse">Crowning the best idea…</p>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <p className="text-gray-400 text-sm animate-pulse">Crowning the best idea…</p>
       </div>
     );
   }
 
+  const runnerUpGridClass =
+    result.runnerUps.length === 3 ? 'grid grid-cols-3 gap-3' : 'grid grid-cols-2 gap-3';
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-white text-gray-900 flex flex-col">
       <DemoBadge />
 
-      <main className="flex-1 flex flex-col items-center justify-center px-6 py-12 max-w-2xl mx-auto w-full">
-        {/* Lead badge */}
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-sm font-bold text-black select-none">
-            ✦
-          </div>
-          <span className="text-xs font-bold text-amber-400 uppercase tracking-widest">
-            Lead's Call
-          </span>
+      <main className="flex-1 flex flex-col items-center px-6 py-12 max-w-2xl mx-auto w-full">
+        {/* Icon + headline */}
+        <div className="text-center mb-8">
+          <div className="text-5xl mb-3">💡</div>
+          <h1 className="text-3xl font-bold text-gray-900">Best Idea</h1>
+          {ideaCount > 0 && (
+            <p className="text-sm text-gray-500 mt-1">From {ideaCount} ideas explored</p>
+          )}
+          {subjectOption && (
+            <p className="text-xs text-gray-400 mt-1">
+              {subjectOption.emoji} {subjectOption.label} · {config.topic}
+            </p>
+          )}
         </div>
 
-        {/* Topic context */}
-        {config.topic && (
-          <p className="text-slate-500 text-xs text-center mb-2">
-            {subjectOption ? `${subjectOption.emoji} ${subjectOption.label} · ` : ''}
-            {config.topic}
-          </p>
-        )}
-
-        {/* Winning idea */}
+        {/* Hero card */}
         <div
-          className="w-full rounded-2xl border border-amber-500/40 bg-gradient-to-b from-amber-500/10 to-amber-500/5 px-8 py-7 mb-6 text-center"
+          className="w-full bg-white border border-amber-300 rounded-2xl p-6 shadow-sm mb-6"
           data-testid="best-idea-winner"
         >
-          <p className="text-xs font-bold text-amber-400 uppercase tracking-widest mb-3">
-            Best Idea
+          <h2 className="text-2xl font-bold text-gray-900">{result.winningIdea}</h2>
+          {result.pitch && (
+            <p className="text-base text-gray-600 mt-1">{result.pitch}</p>
+          )}
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mt-4 mb-1">
+            Why this idea
           </p>
-          <p className="text-xl font-semibold text-white leading-snug">{result.winningIdea}</p>
-        </div>
-
-        {/* Rationale */}
-        <div className="w-full mb-6" data-testid="best-idea-rationale">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Why this idea wins
+          <p className="text-sm text-gray-600 leading-relaxed italic" data-testid="best-idea-rationale">
+            {result.rationale}
           </p>
-          <p className="text-sm text-slate-300 leading-relaxed">{result.rationale}</p>
         </div>
 
         {/* Runner-ups */}
         {result.runnerUps.length > 0 && (
-          <div className="w-full mb-10" data-testid="best-idea-runnerups">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-              Also worth exploring
-            </p>
-            <ul className="space-y-2">
-              {result.runnerUps.map((idea, i) => (
-                <li
+          <div className="w-full mb-8" data-testid="best-idea-runnerups">
+            <p className="text-sm font-semibold text-gray-700 mb-3">Also worth developing</p>
+            <div className={runnerUpGridClass}>
+              {result.runnerUps.map((ru, i) => (
+                <div
                   key={i}
-                  className="flex items-start gap-2.5 text-sm text-slate-400 leading-snug"
+                  className="bg-gray-50 border border-gray-200 rounded-xl p-4"
                 >
-                  <span className="text-slate-600 shrink-0 mt-0.5">{i + 1}.</span>
-                  <span>{idea}</span>
-                </li>
+                  <p className="text-sm font-semibold text-gray-800">{ru.title}</p>
+                  {ru.pitch && (
+                    <p className="text-xs text-gray-500 mt-0.5">{ru.pitch}</p>
+                  )}
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         )}
 
+        {/* Credit line */}
+        <p className="text-xs text-gray-400 text-center mb-8">
+          Brainstormed by <strong>{leftName}</strong> · <strong>{rightName}</strong> — Evaluated by Lead
+        </p>
+
         <button
           onClick={reset}
-          className="text-sm font-semibold text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 px-8 py-3 rounded-xl transition-all duration-150 hover:bg-slate-800"
+          className="text-sm font-semibold text-gray-500 hover:text-gray-900 border border-gray-200 hover:border-gray-400 px-8 py-3 rounded-xl transition-all duration-150 hover:bg-gray-50"
         >
           New Brainstorm
         </button>

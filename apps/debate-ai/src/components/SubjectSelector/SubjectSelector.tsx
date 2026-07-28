@@ -7,27 +7,34 @@ interface Props {
 }
 
 export function SubjectSelector({ selected, onSelect }: Props) {
+  const active = selected ?? 'general';
+
   return (
     <div
-      className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4"
+      className="animate-subject-reveal"
       data-testid="subject-selector"
+      style={{ animation: 'subjectReveal 150ms ease-out both' }}
     >
-      <p className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-3">
-        Subject / Domain
-      </p>
+      <style>{`
+        @keyframes subjectReveal {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+      <label className="block text-sm font-medium text-slate-300 mb-2">Subject</label>
       <div className="flex flex-wrap gap-2">
         {BRAINSTORM_SUBJECTS.map((s) => {
-          const isSelected = s.id === selected;
+          const isSelected = s.id === active;
           return (
             <button
               key={s.id}
               onClick={() => onSelect(s.id)}
               data-testid={`subject-${s.id}`}
               aria-pressed={isSelected}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all duration-150 ${
                 isSelected
-                  ? 'bg-amber-500 text-black'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                  ? 'bg-amber-500 text-white border border-amber-500 font-medium'
+                  : 'border border-slate-600 text-slate-400 hover:border-amber-400 hover:text-amber-400'
               }`}
             >
               <span>{s.emoji}</span>

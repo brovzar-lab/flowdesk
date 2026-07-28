@@ -29,9 +29,15 @@ export interface DebateFormat {
   endingType: 'verdict' | 'synthesis' | 'open' | 'best-idea';
 }
 
+export interface RunnerUp {
+  title: string;
+  pitch?: string;
+}
+
 export interface BestIdeaResult {
   winningIdea: string;
-  runnerUps: string[];
+  pitch?: string;
+  runnerUps: RunnerUp[];
   rationale: string;
 }
 
@@ -66,9 +72,12 @@ export interface DebateConfig {
   subject?: BrainstormSubject;
 }
 
+export type LeadTurnType = 'steer' | 'synthesis';
+
 export interface Turn {
   id: string;
   side: Side;
   text: string;
   status: TurnStatus;
+  leadType?: LeadTurnType;
 }

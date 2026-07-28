@@ -59,7 +59,7 @@ export const DEBATE_FORMATS: DebateFormat[] = [
     id: 'brainstorm',
     label: 'Brainstorm',
     emoji: '💡',
-    blurb: 'Two idea partners yes-and their way to the best possible idea. The Lead crowns the winner.',
+    blurb: 'Two idea partners build toward the best possible idea — yes-and, not fight-to-win.',
     framing: 'collaborative',
     rhythmBias: 'mixed',
     endingType: 'best-idea',

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useDebateStore } from '../store/debateStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { MODELS } from '../data/models';
+import type { BestIdeaResult } from '../types';
 
 const DEMO_LEFT = MODELS.find((m) => m.id === 'gpt-4o')!;
 const DEMO_RIGHT = MODELS.find((m) => m.id === 'claude-3.5-sonnet')!;
@@ -19,6 +20,7 @@ export const DEMO_BRAINSTORM_TURNS = [
   },
   {
     side: 'lead' as const,
+    leadType: 'steer' as const,
     text: "Strong thread forming. The 'drafts as cuts' mechanic is genuinely fresh — it externalises interiority without voiceover and gives the editor a structural language. Keep building on this thread.",
     status: 'done' as const,
   },
@@ -32,24 +34,34 @@ export const DEMO_BRAINSTORM_TURNS = [
     text: "Or flip it entirely: the unsent letter is a breakup letter, but the recipient is a city, not a person. That's a film about grief as urban displacement.",
     status: 'done' as const,
   },
+  {
+    side: 'lead' as const,
+    leadType: 'synthesis' as const,
+    text: "Best idea: the unsent letter as narrative spine — each draft is a cut, the film structure mirrors the rewriting process. The sender writes to someone who died before it could be sent; the final draft becomes the version they'd have wanted to receive. The other ideas are strong variants of the same spine.",
+    status: 'done' as const,
+  },
 ];
 
-export const DEMO_BEST_IDEA = {
-  winningIdea:
-    'An unsent letter as narrative spine — each draft is a cut, the film structure mirrors the rewriting process, culminating in the version the sender finally meant.',
+export const DEMO_BEST_IDEA: BestIdeaResult = {
+  winningIdea: 'An unsent letter as narrative spine — each draft is a cut',
+  pitch: 'A film structured as the rewriting process itself, culminating in the version the sender finally meant.',
   runnerUps: [
-    "The recipient is a deceased person: the film becomes about articulating what was never said before it was too late.",
-    "The recipient is a city, not a person — a breakup letter to a place, reframing grief as urban displacement.",
+    {
+      title: 'The recipient is deceased',
+      pitch: 'Learning to say what was never said before it was too late.',
+    },
+    {
+      title: 'The recipient is a city',
+      pitch: 'A breakup letter to a place — grief as urban displacement.',
+    },
   ],
   rationale:
     "The drafts-as-cuts mechanic earns its place because it's both formal and emotional: it externalises interiority without voiceover, gives the editor a structural language, and lets the audience feel the revision in real time. The other ideas are strong variants of the same spine — they extend it rather than replace it.",
 };
 
 /**
- * In demo mode, pre-fills the setup screen with the Brainstorm format and
- * Film subject so the format card and subject selector are immediately
- * visible. Runs once on mount — does nothing when an OpenRouter key is
- * present.
+ * In demo mode, pre-fills the setup screen with Brainstorm format + Film
+ * subject so the format card and subject selector are immediately visible.
  */
 export function useDemoEngine() {
   const isDemoMode = useSettingsStore((s) => s.isDemoMode);
@@ -73,9 +85,9 @@ export function useDemoEngine() {
 }
 
 /**
- * Populates the arena with scripted brainstorm turns + best-idea result and
- * advances to the 'done' phase so the full BestIdeaReveal screen is shown.
- * Called by the ArenaScreen in demo mode when there are no turns yet.
+ * Populates the arena with scripted brainstorm turns (including Lead steer +
+ * synthesis) and advances to the 'done' phase for the BestIdeaReveal.
+ * Called by ArenaScreen on mount in demo mode.
  */
 export function runBrainstormDemo() {
   const { addTurn, setBestIdeaResult, finishDebate } = useDebateStore.getState();

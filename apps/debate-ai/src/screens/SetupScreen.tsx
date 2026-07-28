@@ -22,6 +22,11 @@ export function SetupScreen() {
   const setTopic = useDebateStore((s) => s.setTopic);
   const setFormat = useDebateStore((s) => s.setFormat);
   const setSubject = useDebateStore((s) => s.setSubject);
+
+  function handleFormatSelect(fmt: typeof format) {
+    setFormat(fmt);
+    if (fmt === 'brainstorm' && !subject) setSubject('general');
+  }
   const startDebate = useDebateStore((s) => s.startDebate);
   const isDemoMode = useSettingsStore((s) => s.isDemoMode);
 
@@ -76,7 +81,7 @@ export function SetupScreen() {
           />
         </section>
 
-        <FormatSelector selectedFormat={format} onSelect={setFormat} />
+        <FormatSelector selectedFormat={format} onSelect={handleFormatSelect} />
 
         {isBrainstorm && (
           <SubjectSelector selected={subject} onSelect={setSubject} />
