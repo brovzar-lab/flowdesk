@@ -7,9 +7,11 @@ import { DebaterPodium } from '../components/DebaterPodium';
 import { FormatSelector } from '../components/FormatSelector';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { DemoBadge } from '../components/DemoBadge';
+import { useDemoEngine } from '../lib/useDemoEngine';
 
 export function SetupScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useDemoEngine();
 
   const topic = useDebateStore((s) => s.config.topic);
   const format = useDebateStore((s) => s.config.format);
