@@ -1,7 +1,17 @@
 import { create } from 'zustand';
-import type { DebatePhase, Intensity, Side, Turn, DebateConfig, Debater, Model } from '../types';
+import type {
+  DebatePhase,
+  DebateFormatId,
+  Intensity,
+  Side,
+  Turn,
+  DebateConfig,
+  Debater,
+  Model,
+} from '../types';
 import { getOpenRouterKey } from '../lib/config';
 import { DEMO_TOPIC } from '../data/models';
+import { DEFAULT_VOICE_ID } from '../data/voices';
 
 interface DebateState {
   phase: DebatePhase;
@@ -12,10 +22,12 @@ interface DebateState {
 
 interface DebateActions {
   setTopic: (topic: string) => void;
+  setFormat: (format: DebateFormatId) => void;
   assignDebater: (side: Side, model: Model) => void;
   removeDebater: (side: Side) => void;
   setPersonaName: (side: Side, name: string) => void;
   setStance: (side: Side, stance: string) => void;
+  setVoiceId: (side: Side, voiceId: string) => void;
   setIntensity: (level: Intensity) => void;
   startDebate: () => void;
   pauseDebate: () => void;
@@ -33,11 +45,12 @@ function makeInitialConfig(): DebateConfig {
     leftDebater: null,
     rightDebater: null,
     intensity: 3,
+    format: 'classic',
   };
 }
 
 function buildDebater(side: Side, model: Model): Debater {
-  return { side, model, personaName: '', stance: '' };
+  return { side, model, personaName: '', stance: '', voiceId: DEFAULT_VOICE_ID };
 }
 
 function makeInitialState(): DebateState {
@@ -53,6 +66,8 @@ export const useDebateStore = create<DebateState & DebateActions>((set, get) => 
   ...makeInitialState(),
 
   setTopic: (topic) => set((s) => ({ config: { ...s.config, topic } })),
+
+  setFormat: (format) => set((s) => ({ config: { ...s.config, format } })),
 
   assignDebater: (side, model) =>
     set((s) => {
@@ -95,6 +110,20 @@ export const useDebateStore = create<DebateState & DebateActions>((set, get) => 
       const debater = side === 'left' ? s.config.leftDebater : s.config.rightDebater;
       if (!debater) return s;
       const updated = { ...debater, stance };
+      return {
+        config: {
+          ...s.config,
+          leftDebater: side === 'left' ? updated : s.config.leftDebater,
+          rightDebater: side === 'right' ? updated : s.config.rightDebater,
+        },
+      };
+    }),
+
+  setVoiceId: (side, voiceId) =>
+    set((s) => {
+      const debater = side === 'left' ? s.config.leftDebater : s.config.rightDebater;
+      if (!debater) return s;
+      const updated = { ...debater, voiceId };
       return {
         config: {
           ...s.config,

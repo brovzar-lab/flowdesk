@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useDebateStore } from './debateStore';
 import { MODELS } from '../data/models';
+import { DEFAULT_VOICE_ID, AVAILABLE_VOICES } from '../data/voices';
 
 function store() {
   return useDebateStore.getState();
@@ -20,10 +21,48 @@ describe('debateStore', () => {
     expect(store().config.topic).toBe('Is pineapple on pizza acceptable?');
   });
 
+  it('defaults format to classic', () => {
+    expect(store().config.format).toBe('classic');
+  });
+
+  it('sets format', () => {
+    store().setFormat('heated');
+    expect(store().config.format).toBe('heated');
+  });
+
+  it('resets format to classic on reset', () => {
+    store().setFormat('oxford');
+    store().reset();
+    expect(store().config.format).toBe('classic');
+  });
+
   it('assigns a model to left side', () => {
     store().assignDebater('left', MODELS[0]);
     expect(store().config.leftDebater?.model.id).toBe(MODELS[0].id);
     expect(store().config.rightDebater).toBeNull();
+  });
+
+  it('assigns debater with default voiceId', () => {
+    store().assignDebater('left', MODELS[0]);
+    expect(store().config.leftDebater?.voiceId).toBe(DEFAULT_VOICE_ID);
+  });
+
+  it('sets voiceId on an assigned debater', () => {
+    store().assignDebater('left', MODELS[0]);
+    store().setVoiceId('left', AVAILABLE_VOICES[3].id);
+    expect(store().config.leftDebater?.voiceId).toBe(AVAILABLE_VOICES[3].id);
+  });
+
+  it('setVoiceId is a no-op when debater not assigned', () => {
+    store().setVoiceId('left', AVAILABLE_VOICES[1].id);
+    expect(store().config.leftDebater).toBeNull();
+  });
+
+  it('preserves voiceId when model is reassigned', () => {
+    store().assignDebater('left', MODELS[0]);
+    store().setVoiceId('left', AVAILABLE_VOICES[4].id);
+    store().assignDebater('left', MODELS[2]);
+    expect(store().config.leftDebater?.voiceId).toBe(AVAILABLE_VOICES[4].id);
   });
 
   it('assigns models to both sides independently', () => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Side } from '../types';
 import { useDebateStore } from '../store/debateStore';
 import { MODELS } from '../data/models';
+import { VoicePicker } from './VoicePicker';
 
 interface Props {
   side: Side;
@@ -98,6 +99,7 @@ export function DebaterPodium({ side }: Props) {
               onChange={(e) => setStance(side, e.target.value)}
               className="w-full bg-black/30 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 border border-slate-700/60 focus:outline-none focus:border-slate-500"
             />
+            <VoicePicker side={side} />
           </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">

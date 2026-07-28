@@ -4,6 +4,7 @@ import { useDebateStore } from '../store/debateStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { ModelPalette } from '../components/ModelPalette';
 import { DebaterPodium } from '../components/DebaterPodium';
+import { FormatSelector } from '../components/FormatSelector';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { DemoBadge } from '../components/DemoBadge';
 
@@ -11,9 +12,11 @@ export function SetupScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const topic = useDebateStore((s) => s.config.topic);
+  const format = useDebateStore((s) => s.config.format);
   const leftDebater = useDebateStore((s) => s.config.leftDebater);
   const rightDebater = useDebateStore((s) => s.config.rightDebater);
   const setTopic = useDebateStore((s) => s.setTopic);
+  const setFormat = useDebateStore((s) => s.setFormat);
   const startDebate = useDebateStore((s) => s.startDebate);
   const isDemoMode = useSettingsStore((s) => s.isDemoMode);
 
@@ -61,6 +64,8 @@ export function SetupScreen() {
             className="w-full bg-slate-900 border border-slate-700/60 rounded-xl px-4 py-3 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500/50 transition-colors"
           />
         </section>
+
+        <FormatSelector selectedFormat={format} onSelect={setFormat} />
 
         <section>
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
