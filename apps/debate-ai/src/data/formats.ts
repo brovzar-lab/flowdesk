@@ -55,4 +55,13 @@ export const DEBATE_FORMATS: DebateFormat[] = [
     rhythmBias: 'long',
     endingType: 'verdict',
   },
+  {
+    id: 'brainstorm',
+    label: 'Brainstorm',
+    emoji: '💡',
+    blurb: 'Two idea partners yes-and their way to the best possible idea. The Lead crowns the winner.',
+    framing: 'collaborative',
+    rhythmBias: 'mixed',
+    endingType: 'best-idea',
+  },
 ];

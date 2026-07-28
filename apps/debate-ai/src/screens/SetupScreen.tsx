@@ -5,6 +5,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { ModelPalette } from '../components/ModelPalette';
 import { DebaterPodium } from '../components/DebaterPodium';
 import { FormatSelector } from '../components/FormatSelector';
+import { SubjectSelector } from '../components/SubjectSelector';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { DemoBadge } from '../components/DemoBadge';
 import { useDemoEngine } from '../lib/useDemoEngine';
@@ -15,12 +16,20 @@ export function SetupScreen() {
 
   const topic = useDebateStore((s) => s.config.topic);
   const format = useDebateStore((s) => s.config.format);
+  const subject = useDebateStore((s) => s.config.subject);
   const leftDebater = useDebateStore((s) => s.config.leftDebater);
   const rightDebater = useDebateStore((s) => s.config.rightDebater);
   const setTopic = useDebateStore((s) => s.setTopic);
   const setFormat = useDebateStore((s) => s.setFormat);
+  const setSubject = useDebateStore((s) => s.setSubject);
   const startDebate = useDebateStore((s) => s.startDebate);
   const isDemoMode = useSettingsStore((s) => s.isDemoMode);
+
+  const isBrainstorm = format === 'brainstorm';
+  const topicLabel = isBrainstorm ? 'What are we brainstorming?' : 'Debate Topic';
+  const topicPlaceholder = isBrainstorm
+    ? 'What should we brainstorm? Be specific.'
+    : 'What should they debate? Be specific and provocative.';
 
   const canStart = Boolean(topic.trim() && leftDebater && rightDebater);
 
@@ -55,12 +64,12 @@ export function SetupScreen() {
             htmlFor="debate-topic"
             className="block text-sm font-semibold text-slate-300 mb-2"
           >
-            Debate Topic
+            {topicLabel}
           </label>
           <input
             id="debate-topic"
             type="text"
-            placeholder="What should they debate? Be specific and provocative."
+            placeholder={topicPlaceholder}
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             className="w-full bg-slate-900 border border-slate-700/60 rounded-xl px-4 py-3 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500/50 transition-colors"
@@ -68,6 +77,10 @@ export function SetupScreen() {
         </section>
 
         <FormatSelector selectedFormat={format} onSelect={setFormat} />
+
+        {isBrainstorm && (
+          <SubjectSelector selected={subject} onSelect={setSubject} />
+        )}
 
         <section>
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
@@ -92,7 +105,7 @@ export function SetupScreen() {
             disabled={!canStart}
             className="bg-white text-black font-bold px-14 py-4 rounded-2xl text-sm uppercase tracking-widest transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed hover:enabled:bg-slate-100 hover:enabled:scale-105 active:enabled:scale-100"
           >
-            Start Debate
+            {isBrainstorm ? 'Start Brainstorm' : 'Start Debate'}
           </button>
         </section>
       </main>

@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type {
   DebatePhase,
   DebateFormatId,
+  BrainstormSubject,
+  BestIdeaResult,
   Intensity,
   Side,
   Turn,
@@ -18,11 +20,13 @@ interface DebateState {
   config: DebateConfig;
   turns: Turn[];
   intensity: Intensity;
+  bestIdeaResult: BestIdeaResult | null;
 }
 
 interface DebateActions {
   setTopic: (topic: string) => void;
   setFormat: (format: DebateFormatId) => void;
+  setSubject: (subject: BrainstormSubject) => void;
   assignDebater: (side: Side, model: Model) => void;
   removeDebater: (side: Side) => void;
   setPersonaName: (side: Side, name: string) => void;
@@ -33,8 +37,10 @@ interface DebateActions {
   pauseDebate: () => void;
   resumeDebate: () => void;
   concludeDebate: () => void;
+  finishDebate: () => void;
   addTurn: (turn: Omit<Turn, 'id'>) => void;
   updateLastTurn: (text: string, status: Turn['status']) => void;
+  setBestIdeaResult: (result: BestIdeaResult) => void;
   reset: () => void;
 }
 
@@ -59,6 +65,7 @@ function makeInitialState(): DebateState {
     config: makeInitialConfig(),
     turns: [],
     intensity: 3,
+    bestIdeaResult: null,
   };
 }
 
@@ -68,6 +75,8 @@ export const useDebateStore = create<DebateState & DebateActions>((set, get) => 
   setTopic: (topic) => set((s) => ({ config: { ...s.config, topic } })),
 
   setFormat: (format) => set((s) => ({ config: { ...s.config, format } })),
+
+  setSubject: (subject) => set((s) => ({ config: { ...s.config, subject } })),
 
   assignDebater: (side, model) =>
     set((s) => {
@@ -159,6 +168,8 @@ export const useDebateStore = create<DebateState & DebateActions>((set, get) => 
     set({ phase: 'concluding' });
   },
 
+  finishDebate: () => set({ phase: 'done' }),
+
   addTurn: (turn) =>
     set((s) => ({
       turns: [...s.turns, { ...turn, id: `turn-${s.turns.length + 1}` }],
@@ -171,6 +182,8 @@ export const useDebateStore = create<DebateState & DebateActions>((set, get) => 
       turns[turns.length - 1] = { ...turns[turns.length - 1], text, status };
       return { turns };
     }),
+
+  setBestIdeaResult: (result) => set({ bestIdeaResult: result }),
 
   reset: () => set(makeInitialState()),
 }));

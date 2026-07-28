@@ -1,5 +1,5 @@
 export type DebatePhase = 'setup' | 'debating' | 'paused' | 'concluding' | 'done';
-export type Side = 'left' | 'right';
+export type Side = 'left' | 'right' | 'lead';
 export type TurnStatus = 'streaming' | 'done';
 export type Intensity = 1 | 2 | 3 | 4 | 5;
 export type DebateFormatId =
@@ -8,7 +8,16 @@ export type DebateFormatId =
   | 'dialectic'
   | 'heated'
   | 'socratic'
-  | 'oxford';
+  | 'oxford'
+  | 'brainstorm';
+
+export type BrainstormSubject = 'film' | 'screenplay' | 'tv' | 'startup' | 'business' | 'general';
+
+export interface BrainstormSubjectOption {
+  id: BrainstormSubject;
+  label: string;
+  emoji: string;
+}
 
 export interface DebateFormat {
   id: DebateFormatId;
@@ -17,7 +26,13 @@ export interface DebateFormat {
   blurb: string;
   framing: 'adversarial' | 'collaborative' | 'questioner';
   rhythmBias: 'short' | 'mixed' | 'long';
-  endingType: 'verdict' | 'synthesis' | 'open';
+  endingType: 'verdict' | 'synthesis' | 'open' | 'best-idea';
+}
+
+export interface BestIdeaResult {
+  winningIdea: string;
+  runnerUps: string[];
+  rationale: string;
 }
 
 export interface Voice {
@@ -48,6 +63,7 @@ export interface DebateConfig {
   rightDebater: Debater | null;
   intensity: Intensity;
   format: DebateFormatId;
+  subject?: BrainstormSubject;
 }
 
 export interface Turn {
