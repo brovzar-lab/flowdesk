@@ -2,6 +2,10 @@
 
 Monorepo for all Lemaa apps. We build apps like crazy and love making the world easier.
 
+## Main page
+
+![App main page](docs/main-page.png)
+
 ## Quick Start
 
 ```bash
