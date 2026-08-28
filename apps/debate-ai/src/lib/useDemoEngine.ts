@@ -80,7 +80,6 @@ export function useDemoEngine() {
     setFormat('brainstorm');
     setSubject('film');
     setTopic('A film told through an unsent letter');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
 

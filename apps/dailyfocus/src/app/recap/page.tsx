@@ -13,8 +13,6 @@ import {
 } from '@/lib/supabase/queries';
 import BottomNav from '@/components/BottomNav';
 
-type RecapTask = Task & { isCarryover?: boolean };
-
 export default function RecapPage(): React.JSX.Element {
   const router = useRouter();
   const supabase = createClient();

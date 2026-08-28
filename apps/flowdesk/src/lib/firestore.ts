@@ -9,8 +9,8 @@ import {
   serverTimestamp,
   query,
   getDoc,
-  DocumentData,
 } from 'firebase/firestore';
+import type { DocumentData } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { db } from './firebase';

@@ -77,7 +77,7 @@ interface FlowDeskState {
   removeTask: (id: string) => void;
   toggleTask: (id: string) => void;
   enterCockpit: (taskId: string) => void;
-  exitCockpit: (completed?: boolean) => void;
+  exitCockpit: () => void;
   tickTimer: () => void;
   startTimer: () => void;
   pauseTimer: () => void;
@@ -155,15 +155,7 @@ export const useStore = create<FlowDeskState>((set, get) => ({
     }
   },
 
-  exitCockpit: (completed = false) => {
-    const { cockpitSession } = get();
-    if (cockpitSession && !isDemoMode) {
-      const endedAt = new Date();
-      const durationSec = Math.round(
-        (endedAt.getTime() - cockpitSession.startedAt.getTime()) / 1000,
-      );
-      console.debug('[FlowDesk] session', { ...cockpitSession, endedAt, durationSec, completed });
-    }
+  exitCockpit: () => {
     clearSessionFromExtension();
     set({
       activeTaskId: null,

@@ -14,8 +14,6 @@ function FocusContent(): React.JSX.Element {
   const supabase = createClient();
 
   const taskIdParam = searchParams.get('taskId');
-  const titleParam = searchParams.get('title');
-
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -48,13 +46,11 @@ function FocusContent(): React.JSX.Element {
     }
   }, [load]);
 
-  async function handleSessionEnd(durationSeconds: number): Promise<void> {
+  async function handleSessionEnd(): Promise<void> {
     if (sessionId) {
       await endFocusSession(supabase, sessionId);
       setSessionId(null);
     }
-    // Log duration
-    console.log(`Session ended: ${Math.round(durationSeconds / 60)} min`);
   }
 
   async function handleStartSession(task: Task): Promise<void> {

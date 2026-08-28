@@ -1,4 +1,3 @@
-import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import type { CareerStage } from '../lib/types';
 import { usePocketMentorStore } from '../lib/store';
