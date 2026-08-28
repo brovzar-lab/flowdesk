@@ -36,7 +36,7 @@ function ProgressDots({ current }: { current: number }) {
   );
 }
 
-export default function OnboardingScreen({ navigation }: Props) {
+export default function OnboardingScreen(_props: Props) {
   const completeOnboarding = useStore((s) => s.completeOnboarding);
   const [step, setStep] = useState(0);
   const [income, setIncome] = useState('');

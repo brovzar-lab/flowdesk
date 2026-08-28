@@ -71,7 +71,6 @@ export default function FocusTimer({ taskTitle, onSessionEnd, onCancel }: Props)
         });
       }, 1000);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   useEffect(() => () => stopTimer(), [stopTimer]);

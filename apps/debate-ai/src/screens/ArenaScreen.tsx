@@ -118,7 +118,6 @@ export function ArenaScreen() {
     if (isDemoMode && isBrainstorm && turns.length === 0) {
       runBrainstormDemo();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const bgClass = isBrainstorm

@@ -2,6 +2,7 @@
   "name": "lemaa-monorepo",
   "private": true,
   "version": "0.0.1",
+  "packageManager": "npm@10.0.0",
   "description": "Lemaa app development monorepo",
   "workspaces": [
     "apps/*",
